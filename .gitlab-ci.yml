@@ -1,0 +1,72 @@
+image: $REPO_URL/stage
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+  - e2e
+  - release
+  - deployment
+
+variables:
+  DOCKER_HOST: tcp://localhost:2375/
+  BASE_IMAGE_NAME: microengine-utils
+
+###############################################################
+# Build Stage (jobs inside a stage run in parallel)
+###############################################################
+
+build-linux:
+  stage: build
+  tags:
+    - kube
+  script:
+    - docker pull $REPO_URL/$BASE_IMAGE_NAME:latest || true
+    - docker build
+      --pull
+      -f docker/Dockerfile
+      -t $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
+      -t $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_REF_SLUG
+      --cache-from=$REPO_URL/$BASE_IMAGE_NAME:latest
+      .
+    - docker push $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
+    - docker push $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_REF_SLUG
+
+
+###############################################################
+# Test Stage
+###############################################################
+
+test:
+  stage: test
+  tags:
+    - kube
+  script:
+    # Gets the current image that was built in the CI for this commit
+    - docker pull $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
+    # Run tests in the same network
+    - docker run --rm $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA pytest
+
+###############################################################
+# End-to-end Stage
+###############################################################
+
+###############################################################
+# Release Stage
+###############################################################
+
+release-latest:
+  stage: release
+  tags:
+    - kube
+  only:
+    - master
+  script:
+    # Gets the current image that was built in the CI for this commit
+    - docker pull $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
+    # Creates new tags for this image, one that should go to AWS and another to DockerHub with the tag "latest"
+    - docker tag $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA $REPO_URL/$BASE_IMAGE_NAME:latest
+    # Pushes to AWS
+    - docker push $REPO_URL/$BASE_IMAGE_NAME:latest

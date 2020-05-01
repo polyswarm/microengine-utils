@@ -16,6 +16,8 @@ setup(
     license='MIT',
     install_requires=parse_requirements(),
     include_package_data=True,
-    packages=find_packages('src'),
-    package_dir={'': 'src'},
+    packages=['microengineutils'],
+    package_dir={
+          'microengineutils': 'src/microengineutils',
+    }
 )

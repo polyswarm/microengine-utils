@@ -10,7 +10,7 @@ RUN wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSI
     && rm dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz
 
 COPY requirements.* ./
-RUN pip install --no-cache-dir --upgrade -r requirements.txt -r requirements.test.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 COPY . .
 RUN set -x && pip install .

@@ -13,7 +13,7 @@ def configure_metrics(datadog_api_key,
     Initialize Datadog metric collectors when the datadog env keys are set
     :return: datadog.ThreadStats
     """
-    if datadog_api_key is not None or datadog_app_key is not None:
+    if datadog_api_key or datadog_app_key:
         if tags is None:
             tags = [
                 f'poly_work:{poly_work}',

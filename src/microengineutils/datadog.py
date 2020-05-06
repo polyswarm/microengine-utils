@@ -14,11 +14,11 @@ def configure_metrics(datadog_api_key, datadog_app_key, engine_name, os_type, po
                 f'engine_name:{engine_name}',
                 f'pod_name:{source}',
                 f'os:{os_type}',
-                'testing' if poly_work == 'local' else ''
+                'testing' if poly_work == 'local' else '',
             ]
         options = {
             'api_key': datadog_api_key,
-            'app_key': datadog_app_key
+            'app_key': datadog_app_key,
         }
 
         initialize(**options)

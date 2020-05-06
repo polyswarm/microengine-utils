@@ -1,12 +1,18 @@
 from datadog import initialize, ThreadStats
 
 
-def configure_metrics(datadog_api_key, datadog_app_key, engine_name, os_type, poly_work, source, tags=None):
+def configure_metrics(datadog_api_key,
+                      datadog_app_key,
+                      engine_name,
+                      os_type,
+                      poly_work,
+                      source,
+                      tags=None,
+                      disabled=False) -> ThreadStats:
     """
-            Initialize Datadog metric collectors when the datadog env keys are set
-            :return:
-            """
-
+    Initialize Datadog metric collectors when the datadog env keys are set
+    :return: datadog.ThreadStats
+    """
     if datadog_api_key is not None or datadog_app_key is not None:
         if tags is None:
             tags = [
@@ -24,7 +30,8 @@ def configure_metrics(datadog_api_key, datadog_app_key, engine_name, os_type, po
         initialize(**options)
 
         metrics_collector = ThreadStats(namespace='polyswarm', constant_tags=tags)
-        metrics_collector.start()
-        return metrics_collector
     else:
-        return None
+        disabled = True
+
+    metrics_collector.start(disabled=disabled)
+    return metrics_collector

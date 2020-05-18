@@ -29,9 +29,9 @@ def configure_metrics(datadog_api_key,
 
         initialize(**options)
 
-        metrics_collector = ThreadStats(namespace='polyswarm', constant_tags=tags)
     else:
         disabled = True
 
+    metrics_collector = ThreadStats(namespace='polyswarm', constant_tags=tags)
     metrics_collector.start(disabled=disabled)
     return metrics_collector

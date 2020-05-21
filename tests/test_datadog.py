@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from microengineutils.datadog import configure_metrics
+from microengine_utils.datadog import configure_metrics
 
 DATADOG_API_KEY = 'api-key'
 

@@ -1,72 +1,70 @@
-image: $REPO_URL/stage
+image: docker:stable
 
 services:
   - docker:dind
 
 stages:
-  - build
   - test
-  - e2e
   - release
-  - deployment
 
-variables:
-  DOCKER_HOST: tcp://localhost:2375/
-  BASE_IMAGE_NAME: microengine-utils
-
-###############################################################
-# Build Stage (jobs inside a stage run in parallel)
-###############################################################
-
-build-linux:
-  stage: build
+test-run36:
   tags:
     - kube
-  script:
-    - docker pull $REPO_URL/$BASE_IMAGE_NAME:latest || true
-    - docker build
-      --pull
-      -f docker/Dockerfile
-      -t $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
-      -t $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_REF_SLUG
-      --cache-from=$REPO_URL/$BASE_IMAGE_NAME:latest
-      .
-    - docker push $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
-    - docker push $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_REF_SLUG
-
-
-###############################################################
-# Test Stage
-###############################################################
-
-test:
+  image: python:3.6
   stage: test
+  before_script:
+    - pip3 install --upgrade pip
+  script:
+    - pip3 install -r requirements.txt
+    - pip3 install .
+    - pytest -s -v
+
+test-run37:
   tags:
     - kube
+  image: python:3.7
+  stage: test
+  before_script:
+    - pip3 install --upgrade pip
   script:
-    # Gets the current image that was built in the CI for this commit
-    - docker pull $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
-    # Run tests in the same network
-    - docker run --rm $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA pytest
+    - pip3 install -r requirements.txt
+    - pip3 install .
+    - pytest -s -v
 
-###############################################################
-# End-to-end Stage
-###############################################################
+test-run38:
+  tags:
+    - kube
+  image: python:3.8
+  stage: test
+  before_script:
+    - pip3 install --upgrade pip
+  script:
+    - pip3 install -r requirements.txt
+    - pip3 install .
+    - pytest -s -v
 
-###############################################################
-# Release Stage
-###############################################################
-
-release-latest:
+push-to-pypi:
+  tags:
+    - kube
+  image: python:3.6
   stage: release
-  tags:
-    - kube
   only:
-    - master
+    - tags
+  before_script:
+    - pip3 install --upgrade pip setuptools twine wheel
   script:
-    # Gets the current image that was built in the CI for this commit
-    - docker pull $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA
-    # Creates new tags for this image, one that should go to AWS and another to DockerHub with the tag "latest"
-    - docker tag $REPO_URL/$BASE_IMAGE_NAME:$CI_COMMIT_SHA $REPO_URL/$BASE_IMAGE_NAME:latest
-    # Pushes to AWS
-    - docker push $REPO_URL/$BASE_IMAGE_NAME:latest
+    - pip3 install -r requirements.txt
+    - python setup.py sdist bdist_wheel
+
+    # check git tag version vs setup.py version. bail if not equal.
+    - >-
+      tagver=$(git describe --abbrev=0 --tags)
+      setupver=$(grep "version=" setup.py | cut -d"'" -f 2)
+
+      if [ $tagver != $setupver ]; then
+        echo "git tag version ($tagver) does not match setup.py version ($setupver)"
+        exit 1
+      fi
+
+    # using env variables from Gitlab: TWINE_USERNAME, TWINE_PASSWORD, TWINE_REPOSITORY_URL
+    - twine upload dist/*

@@ -25,6 +25,7 @@ def configure_metrics(datadog_api_key,
         options = {
             'api_key': datadog_api_key,
             'app_key': datadog_app_key,
+            'host_name': source,
         }
 
         initialize(**options)

@@ -1,6 +1,6 @@
 # microengine-utils
 
-Utility package for PolySwarm Engines
+Utility package for [PolySwarm Engines](https://docs.polyswarm.io/suppliers/roles-in-the-marketplace#engines)
 
 Supports Python 3.6 and greater.
 
@@ -8,7 +8,7 @@ Supports Python 3.6 and greater.
 
 From PyPI:
 
-    pip install polyswarm-api
+    pip install microengine-utils
 
 From source:
 

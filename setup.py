@@ -17,8 +17,10 @@ setup(
     license='MIT',
     python_requires='>=3.6,<4',
     install_requires=[
-        'datadog~=0.35.0',
-        'pytest~=3.9.2',
+        'datadog~=0.36.0',
+    ],
+    tests_require=[
+        'pytest~=5.4.2',
     ],
     include_package_data=True,
     packages=find_packages('src'),

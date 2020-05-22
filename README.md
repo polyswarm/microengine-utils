@@ -52,7 +52,7 @@ OS_TYPE = 'windows'
 # Set the environment name, "local" is used for testing
 POLY_WORK = os.getenv('POLY_WORK', 'local') 
 # Set the hostname, "local" is used for testing
-SOURCE = os.getenv("HOSTNAME", "local")
+SOURCE = os.getenv("HOSTNAME", "localhost")
 
 class Scanner(AbstractScanner):
 
@@ -100,6 +100,14 @@ class Scanner(AbstractScanner):
 
 ```
 
+## Testing
+
+    git clone https://github.com/polyswarm/microengine-utils.git
+    cd microengine-utils
+    pip3 install -r requirements.txt
+    pip3 install .
+    pytest -s -v
+    
 ## Questions? Problems?
 
 File a ticket or email us at `info@polyswarm.io`.

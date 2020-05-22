@@ -15,7 +15,7 @@ test-run36:
   before_script:
     - pip3 install --upgrade pip
   script:
-    - pip install -r requirements.txt
+    - pip3 install -r requirements.txt
     - pip3 install .
     - pytest -s -v
 
@@ -27,7 +27,7 @@ test-run37:
   before_script:
     - pip3 install --upgrade pip
   script:
-    - pip install -r requirements.txt
+    - pip3 install -r requirements.txt
     - pip3 install .
     - pytest -s -v
 
@@ -39,7 +39,7 @@ test-run38:
   before_script:
     - pip3 install --upgrade pip
   script:
-    - pip install -r requirements.txt
+    - pip3 install -r requirements.txt
     - pip3 install .
     - pytest -s -v
 
@@ -53,7 +53,7 @@ push-to-pypi:
   before_script:
     - pip3 install --upgrade pip setuptools twine wheel
   script:
-    - pip install -r requirements.txt
+    - pip3 install -r requirements.txt
     - python setup.py sdist bdist_wheel
 
     # check git tag version vs setup.py version. bail if not equal.

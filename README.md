@@ -26,7 +26,7 @@ From source:
 
 ## Usage
 
-Here is an example for how to use the datadog metrics utility in an engine.
+Here is an example for how to use the `datadog` metrics utility in an Engine.
 
 ```python
 import asgiref.sync as asgiref_sync
@@ -98,6 +98,37 @@ class Scanner(AbstractScanner):
                 self.metrics_collector.increment(SCAN_VERDICT, tags=['verdict:benign', 'type:file'])
             return ScanResult(bit=True, verdict=infected_bool, confidence=confidence, metadata=metadata.json())
 
+```
+
+Here is an example for using the `malwarerepoclient` utility in Engine unit tests
+
+```python
+import asyncio
+import pytest
+import sys
+
+from malwarerepoclient.client import DummyMalwareRepoClient
+from polyswarm_myengine import Scanner
+from polyswarmartifact import ArtifactType
+
+
+@pytest.yield_fixture()
+def event_loop():
+    loop = asyncio.get_event_loop()
+    if sys.platform == 'win32':
+        loop = asyncio.ProactorEventLoop()
+    yield loop
+    loop.close()
+
+
+@pytest.mark.asyncio
+async def test_scan_random_malicious_and_not():
+    scanner = Scanner()
+
+    for t in [True, False]:
+        mal_md, mal_content = DummyMalwareRepoClient().get_random_file(malicious_filter=t)
+        result = await scanner.scan("nocare", ArtifactType.FILE, mal_content, None, "home")
+        assert result.verdict == t
 ```
 
 ## Testing

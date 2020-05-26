@@ -107,7 +107,7 @@ import asyncio
 import pytest
 import sys
 
-from malwarerepoclient.client import DummyMalwareRepoClient
+from microengine_utils.malwarerepoclient import DummyMalwareRepoClient
 from polyswarm_myengine import Scanner
 from polyswarmartifact import ArtifactType
 

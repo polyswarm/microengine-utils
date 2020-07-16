@@ -1,20 +1,32 @@
-from polyswarmartifact.schema.scan_metadata import Verdict
-from polyswarmclient import ScanResult
-import datadog
-
-
 class BaseScanError(Exception):
     """Scanning-triggered exception"""
     @property
     def event_name(self):
         e = type(self).__name__
-        return e[:e.rindex('ScanError')].lower()
+        return e[:e.rindex('ScanError')] if e.endswith('ScanError') else e
 
 
 class MalformedResponseScanError(BaseScanError):
     """Couldn't parse scanner output"""
     def __init__(self, output):
         self.output = output
+        super().__init__(output)
+
+
+class TimeoutScanError(BaseScanError):
+    """The scan didn't complete before the timeout"""
+
+
+class CalledProcessScanError(BaseScanError):
+    """The scanner process has failed"""
+    def __init__(self, cmd, reason):
+        super().__init__(cmd, reason)
+
+
+class CommandNotFoundScanError(BaseScanError):
+    """Scanner binary not found"""
+    def __init__(self, cmd):
+        super().__init__(cmd)
 
 
 class FileSkippedScanError(BaseScanError):
@@ -38,46 +50,12 @@ class HighCompressionScanError(FileSkippedScanError):
     files or enormous decompressed size"""
 
 
-class TimeoutScanError(BaseScanError):
-    """The scan didn't complete before the timeout"""
-
-
-class CalledProcessScanError(BaseScanError):
-    pass
-
-
-# File Scanners
-
-
-class FileOpenFailScanError(BaseScanError):
-    """Scanner could not open the file requested"""
-
-
 class SignaturesMissingError(BaseScanError):
     """Scanner couldn't find signature / models"""
 
 
-class SignatureUpdateError(Exception):
-    """An error occurred while updating signatures"""
-
-
-class MalformedSignaturesScanError(SignatureUpdateError):
+class MalformedSignaturesScanError(BaseScanError):
     """Couldn't load signature definitions"""
-
-
-class TransportEngineUpdateError(SignatureUpdateError):
-    """An error occurred while transporting signature updates"""
-
-
-class MalformedEngineUpdateError(SignatureUpdateError):
-    """Signature update contains malformed definitions"""
-
-
-# Daemons & API Scanners
-
-
-class ScannerNotFoundError(BaseScanError):
-    """Scanner couldn't find signature / models"""
 
 
 class ServerNotReady(BaseScanError):
@@ -86,3 +64,15 @@ class ServerNotReady(BaseScanError):
 
 class ServerTransportError(BaseScanError):
     """Problem with network connection, http request or server state"""
+
+
+class SignatureUpdateError(Exception):
+    """An error occurred while updating signatures"""
+
+
+class TransportEngineUpdateError(SignatureUpdateError):
+    """An error occurred while transporting signature updates"""
+
+
+class MalformedEngineUpdateError(SignatureUpdateError):
+    """Signature update contains malformed definitions"""

@@ -1,4 +1,4 @@
-from datadog import initialize, ThreadStats
+from datadog import initialize, ThreadStats, statsd
 
 
 def configure_metrics(datadog_api_key,
@@ -36,3 +36,6 @@ def configure_metrics(datadog_api_key,
     metrics_collector = ThreadStats(namespace='polyswarm', constant_tags=tags)
     metrics_collector.start(disabled=disabled)
     return metrics_collector
+
+
+__all__ = ['configure_metrics', 'statsd']

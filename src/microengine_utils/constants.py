@@ -1,3 +1,6 @@
+from platform import platform
+import os
+
 # Configure Datadog metric keys for use in the application
 HTTP_REQUEST = 'microengine.http'
 HTTP_RESPONSE_TIMER = 'microengine.request.time'
@@ -9,3 +12,15 @@ SCAN_TYPE_INVALID = 'microengine.scan.invalid-type'
 SCAN_NO_RESULT = 'microengine.scan.no-result'
 SCAN_TIME = 'microengine.scan.time'
 SCAN_VERDICT = 'microengine.scan.verdict'
+
+WINE_EXE = '/usr/bin/wine'
+
+INSTALL_DIR = os.getenv(
+    'MICROENGINE_INSTALL_DIR',
+    'C:\\microengine\\' if platform() == 'Windows' else '/usr/src/app',
+)
+
+VENDOR_DIR = os.getenv(
+    'MICROENGINE_VENDOR_DIR',
+    os.path.joinpath(INSTALL_DIR, 'vendor/'),
+)

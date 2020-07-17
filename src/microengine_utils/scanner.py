@@ -48,9 +48,9 @@ async def create_scanner_exec(
     except (BrokenPipeError, ConnectionResetError) as e:  # noqa
         proc.kill()
         raise CalledProcessScanError(cmd, str(type(e)))
-    except asyncio.TimeoutError as e:
+    except asyncio.CancelledError as e:
         proc.kill()
-        raise TimeoutScanError
+        raise CancelledError
 
 
 def collect_scan(verbose: 'bool' = False) -> 'Callable[[str, ArtifactType, bytes, Dict, str], ScanResult]':

@@ -15,6 +15,8 @@ SCAN_VERDICT = 'microengine.scan.verdict'
 
 WINE_EXE = '/usr/bin/wine'
 
+PLATFORM = 'Windows' if platform() == 'Windows' else 'Unix'
+
 INSTALL_DIR = os.getenv(
     'MICROENGINE_INSTALL_DIR',
     'C:\\microengine\\' if platform() == 'Windows' else '/usr/src/app',

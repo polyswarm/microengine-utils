@@ -2,19 +2,117 @@ import asyncio
 import tempfile
 from contextlib import suppress
 
+import pydantic
 import platform
 import uuid
 import os
 import os.path
 from pathlib import Path, PureWindowsPath
 from typing import Union, Optional
-from .constants import VENDOR_DIR
+from .constants import VENDOR_DIR, PLATFORM
+
+
+class ArtifactFilename(collections.UserString):
+    def __format__(self, fspec):
+        if 'wine' in fspec:
+            return as_wine_filename(self.data) if 'wine' in fspec
+        else:
+            super().__format__(fspec)
 
 
 def as_wine_filename(path: 'os.PathLike') -> 'PureWindowsPath':
     """Converts a Unix path to the corresponding WinNT path"""
     return PureWindowsPath('Z:').joinpath(os.path.abspath(path)).replace('/', '\\')
 
+
+# class UniversalPath(Path):
+#     def __init__(self, path: 'os.PathLike'):
+#         self.is_winepath = self.is_winnt(path) and PLATFORM != 'Windows'
+#         if self.is_winepath:
+#             super().__init__(self.to_realpath(path))
+#         else:
+#             super().__init__(path)
+
+#     @classmethod
+#     def to_realpath(cls, path: 'os.PathLike'):
+#         """Converts a WINE (or real) path to one understood by the host"""
+#         path_fmt = 'Windows' if PLATFORM == 'Windows' else 'Unix'
+#         p = asyncio.run(winepath(path, output=path_fmt)) if is_winnt(path) else path
+#         return Path(p)
+
+#     @classmethod
+#     def to_winepath(cls, path: 'os.PathLike'):
+#         """Converts a WINE (or real) path to one understood by the host"""
+#         p = path if cls.is_winnt(path) else asyncio.run(winepath(path, output='windows'))
+#         return PureWindowsPath(p)
+
+#     @classmethod
+#     def is_winnt(cls, path: 'os.PathLike'):
+#         return '\\' in str(path)
+
+
+# class UniversalFilename(UniversalPath):
+#     @classmethod
+#     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+#         field_schema.update(format='file-path')
+
+#     @classmethod
+#     def __get_validators__(cls) -> 'CallableGenerator':
+#         universal_path_validator
+#         yield cls.validate
+
+#     @classmethod
+#     def validate(cls, value: Path) -> Path:
+#         if not value.is_file():
+#             raise FileNotFoundError
+
+#         return value
+
+
+# class UniversalDirectory(UniversalPath):
+#     @classmethod
+#     def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+#         field_schema.update(format='directory-path')
+
+#     @classmethod
+#     def __get_validators__(cls) -> 'CallableGenerator':
+#         universal_path_validator
+#         yield cls.validate
+
+#     @classmethod
+#     def validate(cls, value: Path) -> Path:
+#         if not value.is_dir():
+#             raise NotADirectoryError
+
+#         return value
+
+
+async def winepath(path: 'os.PathLike', output='windows') -> 'PureWindowsPath':
+    """Run `winepath` on `path`, converting a Unix/Windows path to it's counterpart.
+
+    `as_windows_filename` is considerably faster when converting an ordinary Unix path for WINE
+    """
+    proc = await asyncio.create_subprocess_exec(
+        'winepath', {
+            'Unix': '-u',
+            'Windows': '-w',
+            'DOS': '-s'
+        }[output],
+        os.path.abspath(path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        stdin=asyncio.subprocess.DEVNULL
+    )
+    npath = await asyncio.wait_for(proc.stdout.readline(), timeout=2.0)
+    return PureWindowsPath(npath.decode().strip())
+
+
+def universal_path_validator(v: Any) -> Path:
+    p = UniversalPath(v)
+    if p.exists():
+        return p
+    else:
+        raise pydantic.errors.PathNotExistsError(path=v)
 
 def vendor_path(*parts: 'str', winnt=False, check_exists=True) -> 'str':
     """
@@ -30,6 +128,42 @@ def vendor_path(*parts: 'str', winnt=False, check_exists=True) -> 'str':
     if check_exists and not f.exists():
         raise FileNotFoundError(str(f))
     return str(as_wine_filename(f) if winnt else f.as_posix())
+
+
+class MicroengineConfig(BaseSettings):
+    INSTALL_DIR: DirectoryPath
+    VENDOR_DIR: DirectoryPath
+
+    CMD_EXE: Optional[FilePath]
+    FILESCAN_CMD: Optional[str]
+    UPDATE_CMD: Optional[str]
+
+    class Config:
+        env_prefix = 'MICROENGINE_'
+
+
+microengine_config = MicroengineConfig()
+
+
+class ArtifactFilename:
+    filename: 'str'
+
+    def __init__(self, filename: 'str'):
+        self.filename = filename
+
+    def __format__(self, fspec):
+        if 'WINE' in fspec:
+            return as_wine_filename(self.filename)
+        return self.filename
+
+
+class CommandRunner:
+    def __init__(self, cmd: 'str'):
+        self.cmd = cmd
+
+    async def run(self, blob):
+        async with ArtifactTempfile(blob) as filename:
+            self.create_scanner_exec(self.cmd.format(path=filename, config=microengine_config()))
 
 
 class ArtifactTempfile:
@@ -93,7 +227,7 @@ class ArtifactTempfile:
                 f.write(self.blob)
 
         del self.blob
-        return self.name
+        return ArtifactFilename(self.name)
 
     def __exit__(self, exc, value, tb):
         with suppress(FileNotFoundError):  # noqa

@@ -1,32 +1,66 @@
 import asyncio
+from pydantic import Field, BaseSettings, FilePath, DirectoryPath
+import os
 from functools import wraps
 import platform
 from contextlib import suppress
 from datetime import datetime
 from operator import attrgetter, itemgetter
 from time import perf_counter
-from typing import (TYPE_CHECKING, Callable, Mapping, NewType, Optional, Text, Tuple, TypedDict, Union)
+from typing import (TYPE_CHECKING, Callable, Mapping, NewType, Optional, Text, Tuple,
+                    TypedDict, Union)
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
 from polyswarmclient import ScanResult
+from .filesystem import as_wine_filename, ArtifactTempfile, winepath, universal_path_validator, ArtifactFilename
+import collections
 
-from .datadog import (
-    SCAN_FAIL, SCAN_NO_RESULT, SCAN_SUCCESS, SCAN_TIME, SCAN_TYPE_INVALID, SCAN_VERDICT, statsd
-)
-from .errors import (
-    BaseScanError, CalledProcessScanError, CommandNotFoundScanError, MalformedResponseScanError,
-    TimeoutScanError
-)
+from .datadog import (SCAN_FAIL, SCAN_NO_RESULT, SCAN_SUCCESS, SCAN_TIME,
+                      SCAN_TYPE_INVALID, SCAN_VERDICT, statsd)
+from .errors import (BaseScanError, CalledProcessScanError, CommandNotFoundScanError,
+                     MalformedResponseScanError, TimeoutScanError)
+from .constants import PLATFORM
+
+
+class MicroengineConfig(BaseSettings):
+    INSTALL_DIR: str # UniversalPath
+    VENDOR_DIR: str # UniversalPath
+    API_KEY: Optional[str]
+
+    CMD_EXE: Optional[str] # Optional[UniversalPath]
+    FILESCAN_CMD: Optional[str]
+    UPDATE_CMD: Optional[str]
+
+    @contextmanager
+    async def scan_command(self, content: 'bytes' = None, *, filename: 'Union[os.PathLike, str]' = None, **kwargs):
+        """
+        >>> os.setenv('MICROENGINE_FILESCAN_CMD', "/tmp/scan.exe -f {path:wine} -s {config:SIGNATURE_DIR}")
+        >>> mcfg = MicroengineConfig()
+        >>> with mcfg.scan_command(b'hello world') as cmd:
+        >>>     return await create_scanner_exec(cmd)
+        ...
+        """
+        async with ArtifactTempfile(content, filename=filename) as filename:
+            yield self.CMD_EXE.format(path=filename, config=self, **kwargs)
+
+    def __format__(self, fspec):
+        if fspec in self.__fields__:
+            return getattr(self, fspec)
+        else:
+            return super().__format__(fspec)
+
+    class Config:
+        env_prefix = 'MICROENGINE_'
 
 
 async def create_scanner_exec(
-    *cmd: 'str',
-    stdout: 'asyncio.StreamReader' = asyncio.subprocess.PIPE,
-    stderr: 'asyncio.StreamReader' = asyncio.subprocess.PIPE,
-    stdin: 'asyncio.StreamReader' = asyncio.subprocess.DEVNULL,
-    check: 'bool' = False,
-    timeout: 'int' = 15,
+        *cmd: 'str',
+        stdout: 'asyncio.StreamReader' = asyncio.subprocess.PIPE,
+        stderr: 'asyncio.StreamReader' = asyncio.subprocess.PIPE,
+        stdin: 'asyncio.StreamReader' = asyncio.subprocess.DEVNULL,
+        check: 'bool' = False,
+        timeout: 'int' = 15,
 ) -> 'Tuple[int, Text, ...]':
     """Run an engine filescan `cmd`, timing out after `timeout` seconds"""
     try:
@@ -39,10 +73,9 @@ async def create_scanner_exec(
         streams = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         if check and proc.returncode != 0:
             raise CalledProcessScanError(cmd, f'Non-zero return code: {proc.returncode}')
-        return (
-            proc.returncode,
-            *(s.decode(errors='ignore') if isinstance(s, bytes) else str(s or '') for s in streams)
-        )
+        return (proc.returncode,
+                *(s.decode(errors='ignore') if isinstance(s, bytes) else str(s or '')
+                  for s in streams))
     except FileNotFoundError:  # noqa
         raise CommandNotFoundScanError(cmd)
     except (BrokenPipeError, ConnectionResetError) as e:  # noqa
@@ -53,14 +86,18 @@ async def create_scanner_exec(
         raise TimeoutScanError
 
 
-def collect_scan(verbose: 'bool' = False) -> 'Callable[[str, ArtifactType, bytes, Dict, str], ScanResult]':
+def collect_scan(
+    verbose: 'bool' = False
+) -> 'Callable[[str, ArtifactType, bytes, Dict, str], ScanResult]':
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 
     - Record and send timing data to Datadog
     - Read the `ScanResult`'s fields to automatically figure out which metrics should be collected
     - Merges `ScanResult` `metadata` with boilerplate scanner information from `EngineInfo`
     """
-    def wrapper(scan_fn: 'Callable[[str, ArtifactType, bytes, Dict, str], ScanResult]') -> 'Callable':
+    def wrapper(
+        scan_fn: 'Callable[[str, ArtifactType, bytes, Dict, str], ScanResult]'
+    ) -> 'Callable':
         async def scan_wrapper(
             self,
             guid: 'str',
@@ -69,7 +106,8 @@ def collect_scan(verbose: 'bool' = False) -> 'Callable[[str, ArtifactType, bytes
             metadata: 'Dict',
             chain: 'str',
         ):
-            tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
+            tags = [f'type:{ ArtifactType.to_string(artifact_type) }'
+                    ]  # e.g 'type:file' or 'type:url'
 
             try:
                 if asyncio.iscoroutinefunction(scan_fn):
@@ -87,15 +125,19 @@ def collect_scan(verbose: 'bool' = False) -> 'Callable[[str, ArtifactType, bytes
                 # successful scan, verdict reported
                 elif scan.bit:
                     with suppress(AttributeError, KeyError):
-                        getter = itemgetter if isinstance(scan.metadata, Mapping) else attrgetter
-                        tags.append(f'malware_family:{getter("scan.metadata.malware_family")}')
+                        getter = itemgetter if isinstance(scan.metadata,
+                                                          Mapping) else attrgetter
+                        tags.append(
+                            f'malware_family:{getter("scan.metadata.malware_family")}')
 
                     # malicious/benign metrics
                     if verbose:
                         statsd.increment(
                             SCAN_VERDICT,
-                            tags=[*tags, 'verdict:malicious' if scan.verdict else 'verdict:benign']
-                        )
+                            tags=[
+                                *tags,
+                                'verdict:malicious' if scan.verdict else 'verdict:benign'
+                            ])
 
                     statsd.increment(SCAN_SUCCESS, tags=tags)
                 # no result reported
@@ -158,14 +200,24 @@ class EngineInfo(types.SimpleNamespace):
                 self.info.update_verdict(scan_result.verdict)
                 return scan_result
     """
+    # platform, e.g `linux', `windows' or `darwin'
     operating_system: str
+    # machine architecture, e.g `amd64' or `i386'
     architecture: str
-    name: Optional[str]  # AV tool
-    vendor: Optional[str]  # AV vendor
-    version: Optional[str]  # version of the polyswarm engine module
-    vendor_version: Optional[str]  # version of the AV engine
-    signature_version: Optional[str]  # version of the AV signature signatures
-    signature_timestamp: Optional[Union[str, datetime.datetime]]  # date of the signature's last release
+
+    # captures the name of this engine
+    name: Optional[str]
+    # captures the vendor / author of this engine
+    vendor: Optional[str]
+
+    # captures the module version of the microengine that rendered this verdict
+    version: Optional[str]
+    # captures the version of engine itself
+    vendor_version: Optional[str]
+    # captures the version of the engine's signatures/definitions used
+    signature_version: Optional[str]
+    # captures the release date of the signatures/definitions used
+    signature_timestamp: Optional[Union[str, datetime.datetime]]
 
     def __init__(self, *args, **kwargs):
         self.operating_system = platform.system()
@@ -201,12 +253,13 @@ class EngineInfo(types.SimpleNamespace):
 
     def update_metadata(self, scan: 'Optional[ScanResult]') -> 'ScanResult':
         """Update a ``ScanResult``'s with shared scanner metadata"""
-        if hasattr(scan, 'metadata'):
-            # if it's not already one, try to parse metadata as a verdict (handles JSON, dict, etc.)
+        if getattr(scan, 'metadata', None):
+            # try to parse the JSON string/dict/... inside `scan.metadata' into a `Verdict'
             if not isinstance(scan.metadata, Verdict):
                 scan.metadata = Verdict.parse_raw(scan.metadata)
         else:
-            # if we don't have one at all, create one anew so we can fill in the scanner information
+            # if the ScanResult doesn't exist or is falsy, build a new one so we can at least fill
+            # in the bare-bones of scanner information
             scan.metadata = Verdict().set_malware_name('')
 
         scan.metadata.set_scanner_info(**self.scanner_info())

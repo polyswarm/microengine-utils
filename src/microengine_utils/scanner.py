@@ -36,7 +36,7 @@ async def create_scanner_exec(
             stderr=stderr,
             stdin=stdin,
         )
-        streams = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        streams = await proc.communicate()
         if check and proc.returncode != 0:
             raise CalledProcessScanError(cmd, f'Non-zero return code: {proc.returncode}')
         return (

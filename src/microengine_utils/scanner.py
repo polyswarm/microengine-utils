@@ -50,7 +50,7 @@ async def create_scanner_exec(
         raise CalledProcessScanError(cmd, str(type(e)))
     except asyncio.CancelledError as e:
         proc.kill()
-        raise CancelledError
+        raise asyncio.CancelledError
 
 
 def collect_scan(verbose: 'bool' = False) -> 'Callable[[str, ArtifactType, bytes, Dict, str], ScanResult]':

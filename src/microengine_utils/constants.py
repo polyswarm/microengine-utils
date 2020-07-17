@@ -1,4 +1,4 @@
-from platform import platform
+import platform
 import os
 
 # Configure Datadog metric keys for use in the application
@@ -15,9 +15,12 @@ SCAN_VERDICT = 'microengine.scan.verdict'
 
 WINE_EXE = '/usr/bin/wine'
 
+PLATFORM_OS = 'Windows' if platform.platform() == 'Windows' else 'Unix'
+PLATFORM_MACHINE = platform.machine()
+
 INSTALL_DIR = os.getenv(
     'MICROENGINE_INSTALL_DIR',
-    'C:\\microengine\\' if platform() == 'Windows' else '/usr/src/app',
+    'C:\\microengine\\' if PLATFORM_OS == 'Windows' else '/usr/src/app',
 )
 
 VENDOR_DIR = os.getenv(

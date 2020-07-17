@@ -1,47 +1,43 @@
-class BaseScanError(Exception):
+from .scanner import EngineConfig
+
+
+class BaseMicroengineError(Exception):
+    pass
+
+
+class BaseScanError(BaseMicroengineError):
     """Scanning-triggered exception"""
     @property
     def event_name(self):
-        e = type(self).__name__
-        return e[:e.rindex('ScanError')] if e.endswith('ScanError') else e
+        name, *_ = type(self).__name__.partition('ScanError')
+        return ''.join(c + '_' if c.isupper() else '' for c in name)
 
 
-class MalformedResponseScanError(BaseScanError):
-    """Couldn't parse scanner output"""
-    def __init__(self, output):
-        self.output = output
-        super().__init__(output)
-
-
-class TimeoutScanError(BaseScanError):
-    """The scan didn't complete before the timeout"""
+class UnprocessableScanError(BaseScanError):
+    """Unrecognized or illegal microengine output"""
 
 
 class CalledProcessScanError(BaseScanError):
-    """The scanner process has failed"""
-    def __init__(self, cmd, reason):
-        super().__init__(cmd, reason)
+    """Microengine process has failed"""
 
 
-class CommandNotFoundScanError(BaseScanError):
-    """Scanner binary not found"""
-    def __init__(self, cmd):
-        super().__init__(cmd)
-
-
-class FileSkippedScanError(BaseScanError):
-    """Scanner requested to skip this file"""
+class SkippedFileScanError(BaseScanError):
+    """Microengine skipped scanning this file"""
 
 
 class IllegalFileTypeScanError(FileSkippedScanError):
-    """Scanner requested to skip this File"""
+    """Microengine doesn't scan artifacts of this type"""
+    def __init__(self, file_type=None, **kwargs):
+        if isinstance(file_type, str):
+            kwargs.set_default('file_type', file_type)
+        return super().__init__(kwargs)
 
 
-class FileEncryptedScanError(FileSkippedScanError):
+class EncryptedFileScanError(FileSkippedScanError):
     """File cannot be decrypted"""
 
 
-class FileCorruptedScanError(FileSkippedScanError):
+class CorruptFileScanError(FileSkippedScanError):
     """File is corrupted, cannot scan"""
 
 
@@ -50,29 +46,21 @@ class HighCompressionScanError(FileSkippedScanError):
     files or enormous decompressed size"""
 
 
-class SignaturesMissingError(BaseScanError):
-    """Scanner couldn't find signature / models"""
-
-
-class MalformedSignaturesScanError(BaseScanError):
-    """Couldn't load signature definitions"""
-
-
-class ServerNotReady(BaseScanError):
+class ServerNotReadyScanError(BaseScanError):
     """The server reported it isn't ready to handle files"""
 
 
-class ServerTransportError(BaseScanError):
-    """Problem with network connection, http request or server state"""
+class BaseSignatureError(BaseMicroengineError):
+    """An error occurred while reading, loading or updating signatures"""
 
 
-class SignatureUpdateError(Exception):
+class SignatureLoadError(BaseSignatureError):
+    """Scanner couldn't load the engine's signatures"""
+
+
+class SignatureUpdateError(BaseSignatureError):
     """An error occurred while updating signatures"""
 
 
-class TransportEngineUpdateError(SignatureUpdateError):
-    """An error occurred while transporting signature updates"""
-
-
-class MalformedEngineUpdateError(SignatureUpdateError):
+class MalformedUpdateError(SignatureUpdateError):
     """Signature update contains malformed definitions"""

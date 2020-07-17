@@ -2,18 +2,37 @@ import asyncio
 import tempfile
 from contextlib import suppress
 
-import platform
 import uuid
 import os
 import os.path
 from pathlib import Path, PureWindowsPath
 from typing import Union, Optional
-from .constants import VENDOR_DIR
+from .constants import VENDOR_DIR, PLATFORM_OS
 
 
 def as_wine_filename(path: 'os.PathLike') -> 'PureWindowsPath':
     """Converts a Unix path to the corresponding WinNT path"""
     return PureWindowsPath('Z:').joinpath(os.path.abspath(path)).replace('/', '\\')
+
+
+async def winepath(path: 'os.PathLike', output='windows') -> 'PureWindowsPath':
+    """Run `winepath` on `path`, converting a Unix/Windows path to it's counterpart.
+
+    `as_windows_filename` is considerably faster when converting an ordinary Unix path for WINE
+    """
+    proc = await asyncio.create_subprocess_exec(
+        'winepath', {
+            'Unix': '-u',
+            'Windows': '-w',
+            'DOS': '-s'
+        }[output],
+        os.path.abspath(path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        stdin=asyncio.subprocess.DEVNULL
+    )
+    npath = await asyncio.wait_for(proc.stdout.readline(), timeout=2.0)
+    return PureWindowsPath(npath.decode().strip())
 
 
 def vendor_path(*parts: 'str', winnt=False, check_exists=True) -> 'str':
@@ -30,6 +49,14 @@ def vendor_path(*parts: 'str', winnt=False, check_exists=True) -> 'str':
     if check_exists and not f.exists():
         raise FileNotFoundError(str(f))
     return str(as_wine_filename(f) if winnt else f.as_posix())
+
+
+class ArtifactFilename(collections.UserString):
+    def __format__(self, fspec):
+        if 'wine' in fspec:
+            return as_wine_filename(self.data)
+        else:
+            super().__format__(fspec)
 
 
 class ArtifactTempfile:
@@ -84,7 +111,7 @@ class ArtifactTempfile:
         if self.blob:
             # create a new empty file and grant the fd write privileges alone
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-            if platform.platform() == 'Windows':
+            if PLATFORM_OS == 'Windows':
                 flags |= os.O_SEQUENTIAL | os.O_BINARY
 
             RDWR_NOEXEC = 0o666  # create our underlying file as +rw-x
@@ -93,7 +120,7 @@ class ArtifactTempfile:
                 f.write(self.blob)
 
         del self.blob
-        return self.name
+        return ArtifactFilename(self.name)
 
     def __exit__(self, exc, value, tb):
         with suppress(FileNotFoundError):  # noqa

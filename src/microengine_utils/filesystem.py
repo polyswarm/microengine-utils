@@ -16,7 +16,7 @@ def as_wine_path(filename: 'str', *, check_exists=False) -> 'PureWindowsPath':  
     return PureWindowsPath('Z:\\').joinpath(*(p.replace('/', '\\') for p in rest))
 
 
-async def winepath(path: 'os.PathLike', output='windows') -> 'PureWindowsPath':
+async def winepath(path: 'os.PathLike', output='Windows') -> 'PureWindowsPath':
     """Run `winepath` on `path`, converting a Unix/Windows path to it's counterpart.
 
     `as_windows_filename` is considerably faster when converting an ordinary Unix path for WINE
@@ -102,7 +102,6 @@ class ArtifactTempfile:
     def __exit__(self, exc, value, tb):
         os.unlink(self.name)
         return False
-
 
 
 try:

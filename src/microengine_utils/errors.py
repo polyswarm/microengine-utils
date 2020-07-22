@@ -1,5 +1,3 @@
-from .scanner import EngineConfig
-
 class BaseMicroengineError(Exception):
     pass
 
@@ -20,6 +18,7 @@ class UnprocessableScanError(BaseScanError):
 
 class CalledProcessScanError(BaseScanError):
     """Microengine process has failed"""
+
 
 class FileSkippedScanError(BaseScanError):
     """Microengine skipped scanning this file"""
@@ -60,4 +59,3 @@ class SignatureUpdateError(BaseSignatureError):
 
 class MalformedUpdateError(SignatureUpdateError):
     """Signature update contains malformed definitions"""
-

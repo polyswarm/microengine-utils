@@ -10,9 +10,9 @@ from typing import Callable, Mapping, Optional, Sequence
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
-from polyswarmclient import ScanResult
+from polyswarmclient.abstractscanner import ScanResult
 
-from .datadog import SCAN_FAIL, SCAN_NO_RESULT, SCAN_SUCCESS, SCAN_TIME, SCAN_TYPE_INVALID, SCAN_VERDICT
+from .constants import SCAN_FAIL, SCAN_NO_RESULT, SCAN_SUCCESS, SCAN_TIME, SCAN_TYPE_INVALID, SCAN_VERDICT
 from .errors import BaseScanError, CalledProcessScanError
 
 
@@ -41,8 +41,7 @@ async def create_scanner_exec(
         raise CalledProcessScanError(cmd, str(type(e)))
 
 
-def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd,
-                engine_info: 'Optional[EngineInfo]' = None):
+def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Optional[EngineInfo]' = None):
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 
     - Record and send timing data to Datadog
@@ -54,15 +53,14 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd,
     def wrapper(scan_fn: 'Callable') -> 'Callable':
         @functools.wraps(scan_fn)
         async def driver(
-                self: 'AbstractScanner',
-                guid: 'str',
-                artifact_type: 'ArtifactType',
-                content: 'bytes',
-                metadata: 'Dict',
-                chain: 'str',
+            self: 'AbstractScanner',
+            guid: 'str',
+            artifact_type: 'ArtifactType',
+            content: 'bytes',
+            metadata: 'Dict',
+            chain: 'str',
         ) -> 'ScanResult':
-            tags = [f'type:{ ArtifactType.to_string(artifact_type) }'
-                    ]  # e.g 'type:file' or 'type:url'
+            tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
 
             try:
                 start = perf_counter()
@@ -76,19 +74,15 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd,
                 # successful scan, verdict reported
                 elif scan.bit:
                     with suppress(AttributeError, KeyError):
-                        getter = itemgetter if isinstance(scan.metadata,
-                                                          Mapping) else attrgetter
-                        tags.append(
-                            f'malware_family:{getter("scan.metadata.malware_family")}')
+                        getter = itemgetter if isinstance(scan.metadata, Mapping) else attrgetter
+                        tags.append(f'malware_family:{getter("metadata.malware_family")(scan)}')
 
                     # malicious/benign metrics
                     if verbose:
                         statsd.increment(
                             SCAN_VERDICT,
-                            tags=[
-                                *tags,
-                                'verdict:malicious' if scan.verdict else 'verdict:benign'
-                            ])
+                            tags=[*tags, 'verdict:malicious' if scan.verdict else 'verdict:benign']
+                        )
 
                     statsd.increment(SCAN_SUCCESS, tags=tags)
                 # no result reported
@@ -130,17 +124,16 @@ def each_match(string: 'str', patterns: 'Sequence[str]', in_order=False):
 
     If `in_order` is true, each of the patterns only match if they occur *after* any (matched)
     patterns prior in the ``patterns`` list (however, these earlier patterns aren't required
-    to have matched for subsequent patterns to match, only that they do not occur prior to
-    this)
+    to have matched for subsequent patterns to matcharen't actually
+    required for subsequent patterns to match)
     """
     pat = re.compile('|'.join(patterns), re.MULTILINE)
     idx = -1
     for m in pat.finditer(string):
         for k, v in m.groupdict(None).items():
-            if in_order:
-                if pat.groupindex[k] > idx:
-                    continue
-                idx = pat.groupindex[k]
-
             if v is not None:
+                if in_order:
+                    if pat.groupindex[k] < idx:
+                        continue
+                    idx = pat.groupindex[k]
                 yield (k, v)

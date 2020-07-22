@@ -22,7 +22,7 @@ PLATFORM_OS = 'Windows' if platform.platform() == 'Windows' else 'Unix'
 
 if PLATFORM_OS == 'Windows':
     OS_TYPE = 'windows'
-elif os.exists(WINE_EXE):
+elif os.path.exists(WINE_EXE):
     OS_TYPE = 'wine'
 else:
     OS_TYPE = 'linux'
@@ -35,7 +35,7 @@ INSTALL_DIR = engenv(
     'C:\\microengine\\' if PLATFORM_OS == 'Windows' else '/usr/src/app',
 )
 
-VENDOR_DIR = engenv('VENDOR_DIR', os.path.joinpath(INSTALL_DIR, 'vendor/'))
+VENDOR_DIR = engenv('VENDOR_DIR', os.path.join(INSTALL_DIR, 'vendor/'))
 ENGINE_NAME = engenv('NAME')
 ENGINE_CMD = engenv('CMD_EXE')
 SIGNATURE_DIR = engenv('SIGNATURE_DIR')

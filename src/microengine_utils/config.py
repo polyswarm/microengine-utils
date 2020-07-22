@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from .constants import PLATFORM_MACHINE, PLATFORM_OS, ENGINE_NAME
 from polyswarmartifact.schema.verdict import Verdict
+from typing import Optional, Union
+from datetime import datetime
 
 class EngineInfo(BaseModel):
     """A standard object to store scanner & signature metadata
@@ -60,25 +62,20 @@ class EngineInfo(BaseModel):
         description="captures the version of the engine's signatures/definitions used",
     )
 
-    definitions_timestamp: Optional[Union[str, datetime.datetime]] = Field(
+    definitions_timestamp: Optional[Union[str, datetime]] = Field(
         alias='signature_timestamp',
         description="captures the release date of the signatures/definitions used",
     )
 
     def scanner_info(self) -> 'Mapping':
         """Returns a ``dict`` usable as ``Verdict.set_scanner_info`` kwargs"""
-        return self.dict(
-            include={
+        return {k: v for k, v in self.dict(by_alias=True, exclude_none=True, exclude_unset=True).items() if k in {
                 'operating_system',
                 'architecture'
                 'version',
                 'signature_version',
                 'vendor_version',
-            },
-            by_alias=True,
-            exclude_none=True,
-            exclude_unset=True,
-        )
+            }}
 
     @property
     def signature_info(self):
@@ -104,7 +101,7 @@ class EngineInfo(BaseModel):
             if name in kwargs:
                 setattr(self, name, kwargs[name])
             elif field.alias in kwargs:
-                setattr(self, field.alias, kwargs[field.alias])
+                setattr(self, name, kwargs[field.alias])
 
     class Config:
         allow_mutation = True

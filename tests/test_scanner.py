@@ -1,5 +1,6 @@
 import unittest.mock
 import asyncio
+from sys import version_info
 
 import pytest
 from microengine_utils.config import EngineInfo
@@ -39,28 +40,29 @@ def check_verdict(json):
     return meta
 
 
-def test_scanalytics_error(statsd, engine_info):
-    @scanalytics(statsd=statsd, engine_info=engine_info)
-    async def scan_fn(*args, **kwargs):
-        raise UnprocessableScanError
+if version_info >= (3, 7):
+    def test_scanalytics_error(statsd, engine_info):
+        @scanalytics(statsd=statsd, engine_info=engine_info)
+        async def scan_fn(*args, **kwargs):
+            raise UnprocessableScanError
 
-    result = asyncio.run(scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home'))
-    assert result.bit is False
-    meta = check_verdict(result.metadata)
-    assert meta.__dict__['scan_error'] == 'unprocessable'
-    statsd.increment.assert_called_once_with(SCAN_FAIL, tags=['type:file', 'scan_error:unprocessable'])
+        result = asyncio.run(scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home'))
+        assert result.bit is False
+        meta = check_verdict(result.metadata)
+        assert meta.__dict__['scan_error'] == 'unprocessable'
+        statsd.increment.assert_called_once_with(SCAN_FAIL, tags=['type:file', 'scan_error:unprocessable'])
 
 
-def test_scanalytics(statsd, engine_info):
-    @scanalytics(statsd=statsd, engine_info=engine_info)
-    async def scan_fn(*args, **kwargs):
-        return ScanResult(bit=True, verdict=True, metadata=Verdict().set_malware_family('123'))
+    def test_scanalytics(statsd, engine_info):
+        @scanalytics(statsd=statsd, engine_info=engine_info)
+        async def scan_fn(*args, **kwargs):
+            return ScanResult(bit=True, verdict=True, metadata=Verdict().set_malware_family('123'))
 
-    result = asyncio.run(scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home'))
-    assert result.bit is True
-    assert result.verdict is True
-    check_verdict(result.metadata)
-    statsd.increment.assert_called_once_with(SCAN_SUCCESS, tags=['type:file', 'malware_family:123'])
+        result = asyncio.run(scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home'))
+        assert result.bit is True
+        assert result.verdict is True
+        check_verdict(result.metadata)
+        statsd.increment.assert_called_once_with(SCAN_SUCCESS, tags=['type:file', 'malware_family:123'])
 
 
 @pytest.mark.parametrize(

@@ -4,8 +4,9 @@ import os
 from contextlib import suppress
 from operator import attrgetter, itemgetter
 from time import perf_counter
+import re
 import datadog
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, Sequence
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
@@ -121,3 +122,25 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd,
 
     return wrapper
 
+
+def each_match(string: 'str', patterns: 'Sequence[str]', in_order=False):
+    """
+    Return an iterator yielding (GROUP NAME, MATCH STRING) tuples of all non-overlapping matches
+    for the regex patterns (``patterns``) found in ``string``
+
+    If `in_order` is true, each of the patterns only match if they occur *after* any (matched)
+    patterns prior in the ``patterns`` list (however, these earlier patterns aren't required
+    to have matched for subsequent patterns to match, only that they do not occur prior to
+    this)
+    """
+    pat = re.compile('|'.join(patterns), re.MULTILINE)
+    idx = -1
+    for m in pat.finditer(string):
+        for k, v in m.groupdict(None).items():
+            if in_order:
+                if pat.groupindex[k] > idx:
+                    continue
+                idx = pat.groupindex[k]
+
+            if v is not None:
+                yield (k, v)

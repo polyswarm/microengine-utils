@@ -58,12 +58,12 @@ class EngineInfo(BaseModel):
     )
 
     definitions_version: Optional[str] = Field(
-        alias='signature_version',
+        alias='signatures_version',
         description="captures the version of the engine's signatures/definitions used",
     )
 
     definitions_timestamp: Optional[Union[str, datetime]] = Field(
-        alias='signature_timestamp',
+        alias='signatures_timestamp',
         description="captures the release date of the signatures/definitions used",
     )
 
@@ -73,7 +73,7 @@ class EngineInfo(BaseModel):
                 'operating_system',
                 'architecture'
                 'version',
-                'signature_version',
+                'signatures_version',
                 'vendor_version',
             }}
 

@@ -17,7 +17,7 @@ def engine_info():
     # use of both the alias and underlying property name
     einfo.update(
         engine_version='vendorver1',
-        signature_version='sigversion',
+        signatures_version='sigversion',
         definitions_timestamp='now',
     )
     return einfo
@@ -34,7 +34,7 @@ def statsd():
 def check_verdict(json):
     assert isinstance(json, str)
     meta = Verdict.parse_raw(json)
-    assert meta.scanner.signature_version == 'sigversion'
+    assert meta.scanner.signatures_version == 'sigversion'
     assert meta.scanner.vendor_version == 'vendorver1'
     return meta
 

@@ -10,9 +10,10 @@ from typing import Union, Optional
 from .constants import VENDOR_DIR, PLATFORM_OS
 
 
-def as_wine_filename(path: 'os.PathLike') -> 'PureWindowsPath':
+def as_wine_path(filename: 'str', *, check_exists=False) -> 'PureWindowsPath':  # noqa
     """Converts a Unix path to the corresponding WinNT path"""
-    return PureWindowsPath('Z:').joinpath(os.path.abspath(path)).replace('/', '\\')
+    root, *rest = Path(filename).absolute().resolve().parts
+    return PureWindowsPath('Z:\\').joinpath(*(p.replace('/', '\\') for p in rest))
 
 
 async def winepath(path: 'os.PathLike', output='windows') -> 'PureWindowsPath':
@@ -33,30 +34,6 @@ async def winepath(path: 'os.PathLike', output='windows') -> 'PureWindowsPath':
     )
     npath = await asyncio.wait_for(proc.stdout.readline(), timeout=2.0)
     return PureWindowsPath(npath.decode().strip())
-
-
-def vendor_path(*parts: 'str', winnt=False, check_exists=True) -> 'str':
-    """
-
-    >>> vendor_path('engine', 'scanner.exe')
-    '/usr/src/app/vendor/engine/scanner.exe'
-
-    >>> vendor_path('engine', 'scanner.exe', winnt=True)
-    'Z:\\usr\\src\\app\\vendor\\engine\\scanner.exe'
-
-    """
-    f = Path(VENDOR_DIR).joinpath(vendordir)
-    if check_exists and not f.exists():
-        raise FileNotFoundError(str(f))
-    return str(as_wine_filename(f) if winnt else f.as_posix())
-
-
-class ArtifactFilename(collections.UserString):
-    def __format__(self, fspec):
-        if 'wine' in fspec:
-            return as_wine_filename(self.data)
-        else:
-            super().__format__(fspec)
 
 
 class ArtifactTempfile:
@@ -100,19 +77,19 @@ class ArtifactTempfile:
         self.name = filename
 
     async def __aenter__(self):
-        return await self.asyncio.get_event_loop().run_in_executor(self.__enter__)
+        return await asyncio.get_event_loop().run_in_executor(None, self.__enter__)
 
     async def __aexit__(self, exc, value, tb):
-        return await self.asyncio.get_event_loop().run_in_executor(self.__exit__, exc, value, tb)
+        return await asyncio.get_event_loop().run_in_executor(None, self.__exit__, exc, value, tb)
 
     def __enter__(self):
         self.name = self.name or os.path.join(tempfile.gettempdir(), f'artifact-{uuid.uuid4()}')
 
         if self.blob:
             # create a new empty file and grant the fd write privileges alone
-            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            flags = os.O_RDWR | os.O_CREAT | os.O_TRUNC
             if PLATFORM_OS == 'Windows':
-                flags |= os.O_SEQUENTIAL | os.O_BINARY
+                flags |= os.O_BINARY
 
             RDWR_NOEXEC = 0o666  # create our underlying file as +rw-x
 
@@ -120,12 +97,12 @@ class ArtifactTempfile:
                 f.write(self.blob)
 
         del self.blob
-        return ArtifactFilename(self.name)
+        return self.name
 
     def __exit__(self, exc, value, tb):
-        with suppress(FileNotFoundError):  # noqa
-            os.unlink(self.name)
+        os.unlink(self.name)
         return False
+
 
 
 try:

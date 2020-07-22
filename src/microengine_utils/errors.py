@@ -1,6 +1,5 @@
 from .scanner import EngineConfig
 
-
 class BaseMicroengineError(Exception):
     pass
 
@@ -9,8 +8,10 @@ class BaseScanError(BaseMicroengineError):
     """Scanning-triggered exception"""
     @property
     def event_name(self):
-        name, *_ = type(self).__name__.partition('ScanError')
-        return ''.join(c + '_' if c.isupper() else '' for c in name)
+        exc_name = type(self).__name__
+        if exc_name.endswith('ScanError'):
+            exc_name = exc_name[:exc_name.rindex('ScanError')]
+        return exc_name.lower()
 
 
 class UnprocessableScanError(BaseScanError):
@@ -20,17 +21,12 @@ class UnprocessableScanError(BaseScanError):
 class CalledProcessScanError(BaseScanError):
     """Microengine process has failed"""
 
-
-class SkippedFileScanError(BaseScanError):
+class FileSkippedScanError(BaseScanError):
     """Microengine skipped scanning this file"""
 
 
 class IllegalFileTypeScanError(FileSkippedScanError):
     """Microengine doesn't scan artifacts of this type"""
-    def __init__(self, file_type=None, **kwargs):
-        if isinstance(file_type, str):
-            kwargs.set_default('file_type', file_type)
-        return super().__init__(kwargs)
 
 
 class EncryptedFileScanError(FileSkippedScanError):
@@ -64,3 +60,4 @@ class SignatureUpdateError(BaseSignatureError):
 
 class MalformedUpdateError(SignatureUpdateError):
     """Signature update contains malformed definitions"""
+

@@ -1,12 +1,16 @@
-from datadog import initialize, ThreadStats, statsd
+import os
+
+from datadog import ThreadStats, initialize
+
+from .constants import DATADOG_API_KEY, DATADOG_APP_KEY, ENGINE_NAME, OS_TYPE
 
 
-def configure_metrics(datadog_api_key,
-                      datadog_app_key,
-                      engine_name,
-                      os_type,
-                      poly_work,
-                      source,
+def configure_metrics(datadog_api_key = DATADOG_API_KEY,
+                      datadog_app_key = DATADOG_APP_KEY,
+                      engine_name = ENGINE_NAME,
+                      os_type = OS_TYPE,
+                      poly_work = os.getenv('POLY_WORK', 'local'),
+                      source = os.getenv('HOSTNAME', "local"),
                       tags=None,
                       disabled=False) -> ThreadStats:
     """
@@ -36,6 +40,3 @@ def configure_metrics(datadog_api_key,
     metrics_collector = ThreadStats(namespace='polyswarm', constant_tags=tags)
     metrics_collector.start(disabled=disabled)
     return metrics_collector
-
-
-__all__ = ['configure_metrics', 'statsd']

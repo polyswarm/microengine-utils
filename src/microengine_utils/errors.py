@@ -1,9 +1,11 @@
+from typing import ClassVar
+
 class BaseMicroengineError(Exception):
     pass
 
 
 class BaseScanError(BaseMicroengineError):
-    event_name: 'str'
+    event_name: 'ClassVar[str]'
     """Scanning-triggered exception"""
     def __init_subclass__(cls):
         super().__init_subclass__()

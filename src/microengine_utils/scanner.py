@@ -1,19 +1,27 @@
 import asyncio
+from contextlib import suppress
 import functools
+import json
 import os
 import re
-from contextlib import suppress
-from operator import attrgetter, itemgetter
 from time import perf_counter
-from typing import Callable, Mapping, Optional, Sequence, List
+from typing import Callable, List, Mapping, Optional, Sequence
 
 import datadog
+
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
 from polyswarmclient.abstractscanner import AbstractScanner, ScanResult
 
 from .config import EngineInfo
-from .constants import (SCAN_FAIL, SCAN_NO_RESULT, SCAN_SUCCESS, SCAN_TIME, SCAN_TYPE_INVALID, SCAN_VERDICT)
+from .constants import (
+    SCAN_FAIL,
+    SCAN_NO_RESULT,
+    SCAN_SUCCESS,
+    SCAN_TIME,
+    SCAN_TYPE_INVALID,
+    SCAN_VERDICT,
+)
 from .errors import BaseScanError, CalledProcessScanError
 
 
@@ -53,7 +61,7 @@ def scanalytics(
     - Read the `ScanResult`'s fields to automatically figure out which metrics should be collected
     - Merges `ScanResult` `metadata` with boilerplate scanner information from `EngineInfo`
     """
-    verbose: 'bool' = bool(verbose or os.getenv('MICROENGINE_VERBOSE_METRICS', False))
+    verbose = verbose or bool(os.getenv('MICROENGINE_VERBOSE_METRICS', False))
 
     def wrapper(scan_fn: 'Callable') -> 'Callable':
         def extract_verdict(scan: 'ScanResult') -> 'Optional[Verdict]':
@@ -64,20 +72,37 @@ def scanalytics(
                 return Verdict.parse_obj(meta)
             return meta
 
-        def collect_metrics(scan: 'ScanResult', tags: 'List[str]'):
-            # invalid bit or verdict
-            if type(scan.verdict) is not bool or type(scan.bit) is not bool:
-                statsd.increment(SCAN_TYPE_INVALID, tags=tags)
+        def attach_siginfo(scan: 'ScanResult') -> 'ScanResult':
+            """Attach shared engine metadata to ``scan`` metadata"""
+            with suppress(AttributeError):
+                scan.metadata = extract_verdict(scan).set_scanner(**engine_info.scanner_info())
+            return scan
 
-            # successful scan, verdict reported
-            elif scan.bit:
+        def jsonify(scan: 'ScanResult') -> 'ScanResult':
+            """Ensure we emit a JSON-encoded metadata"""
+            meta = getattr(scan, 'metadata', None)
+            if isinstance(meta, Verdict):
+                scan.metadata = scan.metadata.json()
+            elif isinstance(meta, Mapping):
+                scan.metadata = json.dumps(meta)
+            return scan
+
+        def scan_error_result(e: 'BaseScanError') -> 'ScanResult':
+            return ScanResult(
+                bit=False,
+                verdict=False,
+                metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
+            )
+
+        def collect_metrics(scan: 'ScanResult', tags: 'List[str]'):
+            if scan.bit is True:  # successful scan, verdict reported
                 with suppress(AttributeError):
                     family = extract_verdict(scan).malware_family
-                    if family:
+                    if isinstance(family, str) and len(family) > 0:
                         tags.append(f'malware_family:{family}')
 
-                # malicious/benign metrics
                 if verbose:
+                    # malicious/benign metrics
                     statsd.increment(
                         SCAN_VERDICT,
                         tags=[*tags, 'verdict:malicious' if scan.verdict else 'verdict:benign'],
@@ -85,8 +110,7 @@ def scanalytics(
 
                 statsd.increment(SCAN_SUCCESS, tags=tags)
 
-            # no result reported
-            elif not scan.bit:
+            elif scan.bit is False:  # no result reported
                 try:
                     # If scan returns a ScanResult w/ bit=False & Verdict equipped with
                     # `scan_error`, we'll treat it as an error, regardless of if a BaseScanError
@@ -99,19 +123,8 @@ def scanalytics(
                     # otherwise, the engine is just reporting no result
                     statsd.increment(SCAN_NO_RESULT, tags=tags)
 
-        def attach_siginfo(scan: 'ScanResult') -> 'ScanResult':
-            # If engines define `scanner_metadata`, we'll automatically include all of the
-            # boilerplate data (e.g `platform`, `machine`, `signature_info`, etc.)
-            if engine_info is not None:
-                engine_info.graft(scan)
-
-            return scan
-
-        def jsonify(scan: 'ScanResult') -> 'ScanResult':
-            if isinstance(getattr(scan, 'metadata', None), Verdict):
-                scan.metadata = scan.metadata.json()
-
-            return scan
+            else:  # invalid bit
+                statsd.increment(SCAN_TYPE_INVALID, tags=tags)
 
         driver: 'Callable[[AbstractScanner, str, ArtifactType, bytes, Mapping, str], ScanResult]'
 
@@ -124,11 +137,7 @@ def scanalytics(
                 try:
                     scan = await scan_fn(self, guid, artifact_type, content, metadata, chain)
                 except BaseScanError as e:
-                    scan = ScanResult(
-                        bit=False,
-                        verdict=False,
-                        metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
-                    )
+                    scan = scan_error_result(e)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
                 collect_metrics(scan, tags)
                 return jsonify(attach_siginfo(scan))
@@ -142,11 +151,7 @@ def scanalytics(
                 try:
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
                 except BaseScanError as e:
-                    scan = ScanResult(
-                        bit=False,
-                        verdict=False,
-                        metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
-                    )
+                    scan = scan_error_result(e)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
                 collect_metrics(scan, tags)
                 return jsonify(attach_siginfo(scan))

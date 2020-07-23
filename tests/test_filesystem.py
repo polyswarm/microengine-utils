@@ -1,11 +1,19 @@
 import asyncio
+import os
 from pathlib import Path
 
-import pytest
-import os
-from microengine_utils import ArtifactTempfile, as_wine_path, each_match, scanalytics
-from microengine_utils.errors import (CalledProcessScanError, UnprocessableScanError)
+from microengine_utils import (
+    ArtifactTempfile,
+    as_wine_path,
+    each_match,
+    scanalytics,
+)
+from microengine_utils.errors import (
+    CalledProcessScanError,
+    UnprocessableScanError,
+)
 from microengine_utils.filesystem import winepath
+import pytest
 
 
 @pytest.mark.parametrize('expect', (('/tmp/test', 'Z:\\tmp\\test'), ('/hello/world/', 'Z:\\hello\\world')))

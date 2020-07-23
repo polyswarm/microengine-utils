@@ -1,13 +1,19 @@
-import unittest.mock
 import asyncio
 from sys import version_info
-
-import pytest
+import unittest.mock
 from uuid import uuid4
+
 from microengine_utils.config import EngineInfo
-from microengine_utils.constants import SCAN_FAIL, SCAN_SUCCESS, SCAN_VERDICT, SCAN_NO_RESULT
+from microengine_utils.constants import (
+    SCAN_FAIL,
+    SCAN_NO_RESULT,
+    SCAN_SUCCESS,
+    SCAN_VERDICT,
+)
 from microengine_utils.errors import UnprocessableScanError
 from microengine_utils.scanner import each_match, scanalytics
+import pytest
+
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
 from polyswarmclient.abstractscanner import ScanResult

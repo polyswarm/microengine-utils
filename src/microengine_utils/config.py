@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Mapping, Optional, Union
 
+from pydantic import BaseModel, Field
+
 from polyswarmartifact.schema.verdict import Verdict
 from polyswarmclient.abstractscanner import ScanResult
-from pydantic import BaseModel, Field
 
 from .constants import ENGINE_NAME, PLATFORM_MACHINE, PLATFORM_OS
 
@@ -88,18 +89,6 @@ class EngineInfo(BaseModel):
     def signature_info(self):
         """Combine signature version and release into an easily destructured value"""
         return '{} <{!s}>'.format(self.definitions_version, self.definitions_timestamp)
-
-    def graft(self, scan: 'ScanResult') -> 'ScanResult':
-        """Update a ``ScanResult``'s with shared scanner metadata"""
-        if getattr(scan, 'metadata', None):
-            # try to parse the JSON string/dict/... inside `scan.metadata' into a `Verdict'
-            if not isinstance(scan.metadata, Verdict):
-                scan.metadata = Verdict.parse_raw(scan.metadata)
-        else:
-            # if the ScanResult doesn't exist or is falsy, build a new one so we can at least fill
-            # in the bare-bones of scanner information
-            scan.metadata = Verdict().set_malware_family('')
-        scan.metadata.set_scanner(**self.scanner_info())
 
     def update(self, **kwargs):
         for name, field in self.__fields__.items():

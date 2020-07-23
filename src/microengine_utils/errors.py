@@ -4,12 +4,12 @@ class BaseMicroengineError(Exception):
 
 class BaseScanError(BaseMicroengineError):
     """Scanning-triggered exception"""
-    @property
-    def event_name(self):
-        exc_name = type(self).__name__
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        exc_name = cls.__name__
         if exc_name.endswith('ScanError'):
             exc_name = exc_name[:exc_name.rindex('ScanError')]
-        return exc_name.lower()
+        cls.event_name = exc_name.lower()
 
 
 class UnprocessableScanError(BaseScanError):

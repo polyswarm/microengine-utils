@@ -42,14 +42,14 @@ async def create_scanner_exec(
         raise CalledProcessScanError(cmd, str(type(e)))
 
 
-def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Optional[EngineInfo]' = None):
+def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Optional[EngineInfo]' = None, verbose: 'bool' = False):
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 
     - Record and send timing data to Datadog
     - Read the `ScanResult`'s fields to automatically figure out which metrics should be collected
     - Merges `ScanResult` `metadata` with boilerplate scanner information from `EngineInfo`
     """
-    verbose: 'bool' = bool(os.getenv('MICROENGINE_VERBOSE_METRICS', False))
+    verbose: 'bool' = bool(verbose or os.getenv('MICROENGINE_VERBOSE_METRICS', False))
 
     def wrapper(scan_fn: 'Callable') -> 'Callable':
         def collect_success(scan: 'ScanResult', tags: 'List[str]') -> 'ScanResult':
@@ -61,7 +61,9 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
             elif scan.bit:
                 with suppress(AttributeError, KeyError):
                     getter = itemgetter if isinstance(scan.metadata, Mapping) else attrgetter
-                    tags.append(f'malware_family:{getter("metadata.malware_family")(scan)}')
+                    name = getter("metadata.malware_family")(scan)
+                    if name:
+                        tags.append(f'malware_family:{name}')
 
                 # malicious/benign metrics
                 if verbose:
@@ -91,6 +93,13 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
             # boilerplate data (e.g `platform`, `machine`, `signature_info`, etc.)
             if engine_info is not None:
                 engine_info.graft(scan)
+
+            return scan
+
+        def convert_metadata(scan: 'ScanResult') -> 'ScanResult':
+            if isinstance(getattr(scan, 'metadata', None), Verdict):
+                scan.metadata = scan.metadata.json()
+
             return scan
 
         driver: 'Callable[[AbstractScanner, str, ArtifactType, bytes, Mapping, str], ScanResult]'
@@ -104,9 +113,10 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
                     start = perf_counter()
                     scan = await scan_fn(self, guid, artifact_type, content, metadata, chain)
                     statsd.timing(SCAN_TIME, perf_counter() - start)
-                    return attach_engine_info(collect_success(scan, tags))
+                    scan = collect_success(scan, tags)
                 except BaseScanError as e:
-                    return attach_engine_info(collect_error(e, tags))
+                    scan = collect_error(e, tags)
+                return convert_metadata(attach_engine_info(scan))
 
         else:
 
@@ -117,9 +127,10 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
                     start = perf_counter()
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
                     statsd.timing(SCAN_TIME, perf_counter() - start)
-                    return attach_engine_info(collect_success(scan, tags))
+                    scan = collect_success(scan, tags)
                 except BaseScanError as e:
-                    return attach_engine_info(collect_error(e, tags))
+                    scan = collect_error(e, tags)
+                return convert_metadata(attach_engine_info(scan))
 
         return driver
 

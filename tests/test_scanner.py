@@ -3,8 +3,9 @@ import asyncio
 from sys import version_info
 
 import pytest
+from uuid import uuid4
 from microengine_utils.config import EngineInfo
-from microengine_utils.constants import SCAN_FAIL, SCAN_SUCCESS
+from microengine_utils.constants import SCAN_FAIL, SCAN_SUCCESS, SCAN_VERDICT, SCAN_NO_RESULT
 from microengine_utils.errors import UnprocessableScanError
 from microengine_utils.scanner import each_match, scanalytics
 from polyswarmartifact import ArtifactType
@@ -32,60 +33,69 @@ def statsd():
     return o
 
 
-def check_verdict(json):
-    assert isinstance(json, str)
-    meta = Verdict.parse_raw(json)
-    assert meta.scanner.signatures_version == 'sigversion'
-    assert meta.scanner.vendor_version == 'vendorver1'
-    return meta
+@pytest.mark.parametrize('is_async', [True, False])
+@pytest.mark.parametrize('scan_error', [None, UnprocessableScanError])
+@pytest.mark.parametrize('scan_value', [(True, True, 'MALWARE'), (True, False, ''), (True, False, '')])
+@pytest.mark.parametrize('verbose_metrics', [True, False])
+@pytest.mark.parametrize(
+    'scan_args', [(None, str(uuid4()), ArtifactType.FILE, b'content', {}, 'home'),
+                  (None, str(uuid4()), ArtifactType.URL, b'content', {}, 'home')]
+)
+def test_scanalytics(statsd, engine_info, is_async, scan_error, scan_value, verbose_metrics, scan_args):
+    bit, verdict, family = scan_value
 
+    if is_async:
+        if version_info < (3, 7):
+            return
 
-if version_info >= (3, 7):
+        @scanalytics(statsd=statsd, engine_info=engine_info, verbose=verbose_metrics)
+        async def scanfn(self, guid, artifact_type, content, metadata, chain):
+            if scan_error is not None:
+                raise scan_error
+            else:
+                return ScanResult(bit=bit, verdict=verdict, metadata=Verdict().set_malware_family(family))
 
-    def test_scanalytics_error(statsd, engine_info):
-        @scanalytics(statsd=statsd, engine_info=engine_info)
-        async def scan_fn(*args, **kwargs):
-            raise UnprocessableScanError
+        result = asyncio.run(scanfn(*scan_args))
+    else:
 
-        result = asyncio.run(scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home'))
+        @scanalytics(statsd=statsd, engine_info=engine_info, verbose=verbose_metrics)
+        def scanfn(self, guid, artifact_type, content, metadata, chain):
+            if scan_error is not None:
+                raise scan_error
+            else:
+                return ScanResult(bit=bit, verdict=verdict, metadata=Verdict().set_malware_family(family))
+
+        result = scanfn(*scan_args)
+
+    assert isinstance(result.metadata, str)
+    meta = Verdict.parse_raw(result.metadata)
+    assert meta.scanner.signatures_version == engine_info.definitions_version
+    assert meta.scanner.vendor_version == engine_info.engine_version
+
+    _, _, atype, *_ = scan_args
+    tags = ['type:%s' % ArtifactType.to_string(atype)]
+
+    if scan_error is None:
+        assert result.verdict is verdict
+        assert result.bit is bit
+        statsd.timing.assert_called_once()
+        if bit:
+            if family:
+                tags.append(f'malware_family:{family}')
+            if verbose_metrics:
+                statsd.increment.assert_any_call(
+                    SCAN_VERDICT,
+                    tags=[*tags, 'verdict:malicious' if verdict else 'verdict:benign'],
+                )
+            statsd.increment.assert_any_call(SCAN_SUCCESS, tags=tags)
+        elif not bit and verbose_metrics:
+            statsd.increment.assert_called_once_with(SCAN_NO_RESULT, tags=tags)
+
+    else:
         assert result.bit is False
-        meta = check_verdict(result.metadata)
-        assert meta.__dict__['scan_error'] == 'unprocessable'
-        statsd.increment.assert_called_once_with(SCAN_FAIL, tags=['type:file', 'scan_error:unprocessable'])
-
-    def test_scanalytics(statsd, engine_info):
-        @scanalytics(statsd=statsd, engine_info=engine_info)
-        async def scan_fn(*args, **kwargs):
-            return ScanResult(bit=True, verdict=True, metadata=Verdict().set_malware_family('123'))
-
-        result = asyncio.run(scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home'))
-        assert result.bit is True
-        assert result.verdict is True
-        check_verdict(result.metadata)
-        statsd.increment.assert_called_once_with(SCAN_SUCCESS, tags=['type:file', 'malware_family:123'])
-
-
-def test_scanalytics_sync_error(statsd, engine_info):
-    @scanalytics(statsd=statsd, engine_info=engine_info)
-    def scan_fn(*args, **kwargs):
-        raise UnprocessableScanError
-
-    result = scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home')
-    assert result.bit is False
-    meta = check_verdict(result.metadata)
-    assert meta.__dict__['scan_error'] == 'unprocessable'
-    statsd.increment.assert_called_once_with(SCAN_FAIL, tags=['type:file', 'scan_error:unprocessable'])
-
-
-def test_scanalytics_sync(statsd, engine_info):
-    @scanalytics(statsd=statsd, engine_info=engine_info)
-    def scan_fn(*args, **kwargs):
-        return ScanResult(bit=True, verdict=True, metadata=Verdict().set_malware_family('123'))
-    result = scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home')
-    assert result.bit is True
-    assert result.verdict is True
-    check_verdict(result.metadata)
-    statsd.increment.assert_called_once_with(SCAN_SUCCESS, tags=['type:file', 'malware_family:123'])
+        assert meta.__dict__['scan_error'] == scan_error.event_name
+        tags.append(f'scan_error:{scan_error.event_name}')
+        statsd.increment.assert_called_once_with(SCAN_FAIL, tags=tags)
 
 
 @pytest.mark.parametrize(

@@ -99,9 +99,7 @@ class EngineInfo(BaseModel):
             # if the ScanResult doesn't exist or is falsy, build a new one so we can at least fill
             # in the bare-bones of scanner information
             scan.metadata = Verdict().set_malware_family('')
-
         scan.metadata.set_scanner(**self.scanner_info())
-        scan.metadata = scan.metadata.json()
 
     def update(self, **kwargs):
         for name, field in self.__fields__.items():

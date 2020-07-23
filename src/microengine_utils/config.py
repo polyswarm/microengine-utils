@@ -1,8 +1,12 @@
-from pydantic import BaseModel, Field
-from .constants import PLATFORM_MACHINE, PLATFORM_OS, ENGINE_NAME
-from polyswarmartifact.schema.verdict import Verdict
-from typing import Optional, Union
 from datetime import datetime
+from typing import Mapping, Optional, Union
+
+from polyswarmartifact.schema.verdict import Verdict
+from polyswarmclient.abstractscanner import ScanResult
+from pydantic import BaseModel, Field
+
+from .constants import ENGINE_NAME, PLATFORM_MACHINE, PLATFORM_OS
+
 
 class EngineInfo(BaseModel):
     """A standard object to store scanner & signature metadata
@@ -69,13 +73,16 @@ class EngineInfo(BaseModel):
 
     def scanner_info(self) -> 'Mapping':
         """Returns a ``dict`` usable as ``Verdict.set_scanner_info`` kwargs"""
-        return {k: v for k, v in self.dict(by_alias=True, exclude_none=True, exclude_unset=True).items() if k in {
+        return {
+            k: v
+            for k, v in self.dict(by_alias=True, exclude_none=True, exclude_unset=True).items() if k in {
                 'operating_system',
                 'architecture'
                 'version',
                 'signatures_version',
                 'vendor_version',
-            }}
+            }
+        }
 
     @property
     def signature_info(self):

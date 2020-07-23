@@ -5,7 +5,7 @@ import json
 import os
 import re
 from time import perf_counter
-from typing import Callable, List, Mapping, Optional, Sequence
+from typing import Callable, List, Mapping, Optional, Sequence, cast
 
 import datadog
 
@@ -53,7 +53,7 @@ async def create_scanner_exec(
 def scanalytics(
     statsd: 'datadog.DogStatsd' = datadog.statsd,
     engine_info: 'Optional[EngineInfo]' = None,
-    verbose: 'bool' = os.getenv('MICROENGINE_VERBOSE_METRICS', False)
+    verbose: 'bool' = bool(os.getenv('MICROENGINE_VERBOSE_METRICS', False))
 ):
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 
@@ -63,6 +63,7 @@ def scanalytics(
     """
     def wrapper(scan_fn: 'Callable') -> 'Callable':
         def extract_verdict(scan: 'ScanResult') -> 'Optional[Verdict]':
+            """Try to parse ``scan.metadata`` as a Verdict"""
             meta = getattr(scan, 'metadata', None)
             if isinstance(meta, str):
                 return Verdict.parse_raw(meta)
@@ -73,10 +74,15 @@ def scanalytics(
         def attach_siginfo(scan: 'ScanResult') -> 'ScanResult':
             """Attach shared engine metadata to ``scan`` metadata"""
             with suppress(AttributeError):
-                scan.metadata = extract_verdict(scan).set_scanner(**engine_info.scanner_info())
+                # If there's valid engine info, *always* attach a Verdict, even
+                # if ``scan.metadata`` is None
+                sinfo = engine_info.scanner_info()
+                if sinfo:
+                    meta = extract_verdict(scan) or Verdict().set_malware_family('')
+                    scan.metadata = meta.set_scanner(**sinfo)
             return scan
 
-        def jsonify(scan: 'ScanResult') -> 'ScanResult':
+        def jsonify_metadata(scan: 'ScanResult') -> 'ScanResult':
             """Ensure we emit a JSON-encoded metadata"""
             meta = getattr(scan, 'metadata', None)
             if isinstance(meta, Verdict):
@@ -115,7 +121,7 @@ def scanalytics(
                     # was raised in scan's function body.
                     statsd.increment(
                         SCAN_FAIL,
-                        tags=[*tags, 'scan_error:{scan_error!s}'.format_map(extract_verdict(scan).__dict__)],
+                        tags=[*tags, 'scan_error:{scan_error}'.format_map(extract_verdict(scan).__dict__)],
                     )
                 except (AttributeError, KeyError):
                     # otherwise, the engine is just reporting no result
@@ -124,11 +130,8 @@ def scanalytics(
             else:  # invalid bit
                 statsd.increment(SCAN_TYPE_INVALID, tags=tags)
 
-        driver: 'Callable[[AbstractScanner, str, ArtifactType, bytes, Mapping, str], ScanResult]'
-
         if asyncio.iscoroutinefunction(scan_fn):
 
-            @functools.wraps(scan_fn)
             async def driver(self, guid, artifact_type, content, metadata, chain):
                 tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
                 start = perf_counter()
@@ -138,11 +141,10 @@ def scanalytics(
                     scan = scan_error_result(e)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
                 collect_metrics(scan, tags)
-                return jsonify(attach_siginfo(scan))
+                return jsonify_metadata(attach_siginfo(scan))
 
         else:
 
-            @functools.wraps(scan_fn)
             def driver(self, guid, artifact_type, content, metadata, chain):
                 tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
                 start = perf_counter()
@@ -152,9 +154,10 @@ def scanalytics(
                     scan = scan_error_result(e)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
                 collect_metrics(scan, tags)
-                return jsonify(attach_siginfo(scan))
+                return jsonify_metadata(attach_siginfo(scan))
 
-        return driver
+        functools.wraps(scan_fn)
+        return cast('Callable[[AbstractScanner, str, ArtifactType, bytes, Mapping, str], ScanResult]', driver)
 
     return wrapper
 

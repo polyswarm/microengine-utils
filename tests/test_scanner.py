@@ -42,14 +42,24 @@ def statsd():
 @pytest.mark.parametrize('is_async', [True, False])
 @pytest.mark.parametrize('scan_error', [None, UnprocessableScanError])
 @pytest.mark.parametrize('json_metadata', [True, False])
-@pytest.mark.parametrize('scan_value', [(True, True, 'MALWARE'), (True, False, ''), (True, False, '')])
+@pytest.mark.parametrize(
+    'scan_value', [
+        (True, True, 'MALWARE'),
+        (True, False, ''),
+        (True, False, ''),
+        (True, False, None),
+    ]
+)
 @pytest.mark.parametrize('verbose_metrics', [True, False])
 @pytest.mark.parametrize(
     'scan_args', [(None, str(uuid4()), ArtifactType.FILE, b'content', {}, 'home'),
                   (None, str(uuid4()), ArtifactType.URL, b'content', {}, 'home')]
 )
-def test_scanalytics(statsd, engine_info, is_async, scan_error, json_metadata, scan_value, verbose_metrics, scan_args):
+def test_scanalytics(
+    statsd, engine_info, is_async, scan_error, json_metadata, scan_value, verbose_metrics, scan_args
+):
     bit, verdict, family = scan_value
+    src_meta = None if family is None else Verdict().set_malware_family(family)
 
     if is_async:
         if version_info < (3, 7):
@@ -59,9 +69,11 @@ def test_scanalytics(statsd, engine_info, is_async, scan_error, json_metadata, s
         async def scanfn(self, guid, artifact_type, content, metadata, chain):
             if scan_error is not None:
                 raise scan_error
-            else:
-                v = Verdict().set_malware_family(family)
-                return ScanResult(bit=bit, verdict=verdict, metadata=v.json() if json_metadata else v)
+            return ScanResult(
+                bit=bit,
+                verdict=verdict,
+                metadata=src_meta.json() if json_metadata and src_meta is not None else src_meta
+            )
 
         result = asyncio.run(scanfn(*scan_args))
     else:
@@ -70,41 +82,51 @@ def test_scanalytics(statsd, engine_info, is_async, scan_error, json_metadata, s
         def scanfn(self, guid, artifact_type, content, metadata, chain):
             if scan_error is not None:
                 raise scan_error
-            else:
-                v = Verdict().set_malware_family(family)
-                return ScanResult(bit=bit, verdict=verdict, metadata=v.json() if json_metadata else v)
+            return ScanResult(
+                bit=bit,
+                verdict=verdict,
+                metadata=src_meta.json() if json_metadata and src_meta is not None else src_meta
+            )
 
         result = scanfn(*scan_args)
 
-    assert isinstance(result.metadata, str)
-    meta = Verdict.parse_raw(result.metadata)
-    assert meta.scanner.signatures_version == engine_info.definitions_version
-    assert meta.scanner.vendor_version == engine_info.engine_version
+    statsd.timing.assert_called_once()
 
-    _, _, atype, *_ = scan_args
-    tags = ['type:%s' % ArtifactType.to_string(atype)]
+    tags = ['type:%s' % ArtifactType.to_string(scan_args[2])]
 
     if scan_error is None:
         assert result.verdict is verdict
         assert result.bit is bit
-        statsd.timing.assert_called_once()
-        if bit:
+
+        if bit is True:
             if family:
                 tags.append(f'malware_family:{family}')
+
+            statsd.increment.assert_any_call(SCAN_SUCCESS, tags=tags)
+
             if verbose_metrics:
                 statsd.increment.assert_any_call(
                     SCAN_VERDICT,
                     tags=[*tags, 'verdict:malicious' if verdict else 'verdict:benign'],
                 )
-            statsd.increment.assert_any_call(SCAN_SUCCESS, tags=tags)
-        elif not bit and verbose_metrics:
-            statsd.increment.assert_called_once_with(SCAN_NO_RESULT, tags=tags)
+                assert statsd.increment.call_count == 2
+            else:
+                assert statsd.increment.call_count == 1
+
+        elif bit is False:
+            if verbose_metrics:
+                statsd.increment.assert_called_once_with(SCAN_NO_RESULT, tags=tags)
 
     else:
-        assert result.bit is False
-        assert meta.__dict__['scan_error'] == scan_error.event_name
         tags.append(f'scan_error:{scan_error.event_name}')
         statsd.increment.assert_called_once_with(SCAN_FAIL, tags=tags)
+
+    assert isinstance(result.metadata, str)
+    result_meta = Verdict.parse_raw(result.metadata)
+    assert result_meta.scanner.signatures_version == engine_info.definitions_version
+    assert result_meta.scanner.vendor_version == engine_info.engine_version
+    if scan_error:
+        assert result_meta.__dict__['scan_error'] == scan_error.event_name
 
 
 @pytest.mark.parametrize(

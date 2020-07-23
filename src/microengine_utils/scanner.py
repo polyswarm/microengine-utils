@@ -53,7 +53,7 @@ async def create_scanner_exec(
 def scanalytics(
     statsd: 'datadog.DogStatsd' = datadog.statsd,
     engine_info: 'Optional[EngineInfo]' = None,
-    verbose: 'bool' = False
+    verbose: 'bool' = os.getenv('MICROENGINE_VERBOSE_METRICS', False)
 ):
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 
@@ -61,8 +61,6 @@ def scanalytics(
     - Read the `ScanResult`'s fields to automatically figure out which metrics should be collected
     - Merges `ScanResult` `metadata` with boilerplate scanner information from `EngineInfo`
     """
-    verbose = verbose or bool(os.getenv('MICROENGINE_VERBOSE_METRICS', False))
-
     def wrapper(scan_fn: 'Callable') -> 'Callable':
         def extract_verdict(scan: 'ScanResult') -> 'Optional[Verdict]':
             meta = getattr(scan, 'metadata', None)
@@ -119,7 +117,7 @@ def scanalytics(
                         SCAN_FAIL,
                         tags=[*tags, 'scan_error:{scan_error!s}'.format_map(extract_verdict(scan).__dict__)],
                     )
-                except KeyError:
+                except (AttributeError, KeyError):
                     # otherwise, the engine is just reporting no result
                     statsd.increment(SCAN_NO_RESULT, tags=tags)
 

@@ -52,14 +52,21 @@ def statsd():
 )
 @pytest.mark.parametrize('verbose_metrics', [True, False])
 @pytest.mark.parametrize(
-    'scan_args', [(None, str(uuid4()), ArtifactType.FILE, b'content', {}, 'home'),
-                  (None, str(uuid4()), ArtifactType.URL, b'content', {}, 'home')]
+    'scan_args', [
+        (None, str(uuid4()), ArtifactType.FILE, b'content', {}, 'home'),
+        (None, str(uuid4()), ArtifactType.URL, b'content', {}, 'home'),
+    ]
 )
 def test_scanalytics(
     statsd, engine_info, is_async, scan_error, json_metadata, scan_value, verbose_metrics, scan_args
 ):
     bit, verdict, family = scan_value
     src_meta = None if family is None else Verdict().set_malware_family(family)
+    scan_result = ScanResult(
+        bit=bit,
+        verdict=verdict,
+        metadata=src_meta.json() if json_metadata and src_meta is not None else src_meta
+    )
 
     if is_async:
         if version_info < (3, 7):
@@ -69,11 +76,7 @@ def test_scanalytics(
         async def scanfn(self, guid, artifact_type, content, metadata, chain):
             if scan_error is not None:
                 raise scan_error
-            return ScanResult(
-                bit=bit,
-                verdict=verdict,
-                metadata=src_meta.json() if json_metadata and src_meta is not None else src_meta
-            )
+            return scan_result
 
         result = asyncio.run(scanfn(*scan_args))
     else:
@@ -82,11 +85,7 @@ def test_scanalytics(
         def scanfn(self, guid, artifact_type, content, metadata, chain):
             if scan_error is not None:
                 raise scan_error
-            return ScanResult(
-                bit=bit,
-                verdict=verdict,
-                metadata=src_meta.json() if json_metadata and src_meta is not None else src_meta
-            )
+            return scan_result
 
         result = scanfn(*scan_args)
 

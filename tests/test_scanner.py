@@ -81,12 +81,11 @@ def test_scanalytics_sync(statsd, engine_info):
     @scanalytics(statsd=statsd, engine_info=engine_info)
     def scan_fn(*args, **kwargs):
         return ScanResult(bit=True, verdict=True, metadata=Verdict().set_malware_family('123'))
-
-        result = scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home')
-        assert result.bit is True
-        assert result.verdict is True
-        check_verdict(result.metadata)
-        statsd.increment.assert_called_once_with(SCAN_SUCCESS, tags=['type:file', 'malware_family:123'])
+    result = scan_fn(None, None, ArtifactType.FILE, b'content', {}, 'home')
+    assert result.bit is True
+    assert result.verdict is True
+    check_verdict(result.metadata)
+    statsd.increment.assert_called_once_with(SCAN_SUCCESS, tags=['type:file', 'malware_family:123'])
 
 
 @pytest.mark.parametrize(

@@ -117,6 +117,7 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
                     start = perf_counter()
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
                     statsd.timing(SCAN_TIME, perf_counter() - start)
+                    return attach_engine_info(collect_success(scan, tags))
                 except BaseScanError as e:
                     return attach_engine_info(collect_error(e, tags))
 

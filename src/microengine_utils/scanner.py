@@ -42,7 +42,11 @@ async def create_scanner_exec(
         raise CalledProcessScanError(cmd, str(type(e)))
 
 
-def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Optional[EngineInfo]' = None, verbose: 'bool' = False):
+def scanalytics(
+    statsd: 'datadog.DogStatsd' = datadog.statsd,
+    engine_info: 'Optional[EngineInfo]' = None,
+    verbose: 'bool' = False
+):
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 
     - Record and send timing data to Datadog
@@ -52,43 +56,50 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
     verbose: 'bool' = bool(verbose or os.getenv('MICROENGINE_VERBOSE_METRICS', False))
 
     def wrapper(scan_fn: 'Callable') -> 'Callable':
-        def collect_success(scan: 'ScanResult', tags: 'List[str]') -> 'ScanResult':
+        def extract_verdict(scan: 'ScanResult') -> 'Optional[Verdict]':
+            meta = getattr(scan, 'metadata', None)
+            if isinstance(meta, str):
+                return Verdict.parse_raw(meta)
+            elif isinstance(meta, Mapping):
+                return Verdict.parse_obj(meta)
+            return meta
+
+        def collect_metrics(scan: 'ScanResult', tags: 'List[str]'):
             # invalid bit or verdict
             if type(scan.verdict) is not bool or type(scan.bit) is not bool:
                 statsd.increment(SCAN_TYPE_INVALID, tags=tags)
 
             # successful scan, verdict reported
             elif scan.bit:
-                with suppress(AttributeError, KeyError):
-                    getter = itemgetter if isinstance(scan.metadata, Mapping) else attrgetter
-                    name = getter("metadata.malware_family")(scan)
-                    if name:
-                        tags.append(f'malware_family:{name}')
+                with suppress(AttributeError):
+                    family = extract_verdict(scan).malware_family
+                    if family:
+                        tags.append(f'malware_family:{family}')
 
                 # malicious/benign metrics
                 if verbose:
                     statsd.increment(
-                        SCAN_VERDICT, tags=[*tags, 'verdict:malicious' if scan.verdict else 'verdict:benign']
+                        SCAN_VERDICT,
+                        tags=[*tags, 'verdict:malicious' if scan.verdict else 'verdict:benign'],
                     )
 
                 statsd.increment(SCAN_SUCCESS, tags=tags)
 
             # no result reported
             elif not scan.bit:
-                if verbose:
+                try:
+                    # If scan returns a ScanResult w/ bit=False & Verdict equipped with
+                    # `scan_error`, we'll treat it as an error, regardless of if a BaseScanError
+                    # was raised in scan's function body.
+                    statsd.increment(
+                        SCAN_FAIL,
+                        tags=[*tags, 'scan_error:{scan_error!s}'.format_map(extract_verdict(scan).__dict__)],
+                    )
+                except KeyError:
+                    # otherwise, the engine is just reporting no result
                     statsd.increment(SCAN_NO_RESULT, tags=tags)
 
-            return scan
-
-        def collect_error(err: 'BaseScanError', tags: 'List[str]') -> 'ScanResult':
-            # If we encountered a scan error, we still return a scan result with `scan_error`
-            # documenting the error which occurred
-            v = Verdict().set_malware_family('').add_extra('scan_error', err.event_name)
-            tags.append(f'scan_error:{err.event_name}')  # e.g 'scan_error:fileskippedscanerror'
-            statsd.increment(SCAN_FAIL, tags=tags)
-            return ScanResult(bit=False, verdict=False, metadata=v)
-
-        def attach_engine_info(scan: 'ScanResult') -> 'ScanResult':
+        def attach_siginfo(scan: 'ScanResult') -> 'ScanResult':
             # If engines define `scanner_metadata`, we'll automatically include all of the
             # boilerplate data (e.g `platform`, `machine`, `signature_info`, etc.)
             if engine_info is not None:
@@ -96,7 +107,7 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
 
             return scan
 
-        def convert_metadata(scan: 'ScanResult') -> 'ScanResult':
+        def jsonify(scan: 'ScanResult') -> 'ScanResult':
             if isinstance(getattr(scan, 'metadata', None), Verdict):
                 scan.metadata = scan.metadata.json()
 
@@ -109,28 +120,36 @@ def scanalytics(statsd: 'datadog.DogStatsd' = datadog.statsd, engine_info: 'Opti
             @functools.wraps(scan_fn)
             async def driver(self, guid, artifact_type, content, metadata, chain):
                 tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
+                start = perf_counter()
                 try:
-                    start = perf_counter()
                     scan = await scan_fn(self, guid, artifact_type, content, metadata, chain)
-                    statsd.timing(SCAN_TIME, perf_counter() - start)
-                    scan = collect_success(scan, tags)
                 except BaseScanError as e:
-                    scan = collect_error(e, tags)
-                return convert_metadata(attach_engine_info(scan))
+                    scan = ScanResult(
+                        bit=False,
+                        verdict=False,
+                        metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
+                    )
+                statsd.timing(SCAN_TIME, perf_counter() - start)
+                collect_metrics(scan, tags)
+                return jsonify(attach_siginfo(scan))
 
         else:
 
             @functools.wraps(scan_fn)
             def driver(self, guid, artifact_type, content, metadata, chain):
                 tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
+                start = perf_counter()
                 try:
-                    start = perf_counter()
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
-                    statsd.timing(SCAN_TIME, perf_counter() - start)
-                    scan = collect_success(scan, tags)
                 except BaseScanError as e:
-                    scan = collect_error(e, tags)
-                return convert_metadata(attach_engine_info(scan))
+                    scan = ScanResult(
+                        bit=False,
+                        verdict=False,
+                        metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
+                    )
+                statsd.timing(SCAN_TIME, perf_counter() - start)
+                collect_metrics(scan, tags)
+                return jsonify(attach_siginfo(scan))
 
         return driver
 

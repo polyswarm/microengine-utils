@@ -35,13 +35,14 @@ def statsd():
 
 @pytest.mark.parametrize('is_async', [True, False])
 @pytest.mark.parametrize('scan_error', [None, UnprocessableScanError])
+@pytest.mark.parametrize('json_metadata', [True, False])
 @pytest.mark.parametrize('scan_value', [(True, True, 'MALWARE'), (True, False, ''), (True, False, '')])
 @pytest.mark.parametrize('verbose_metrics', [True, False])
 @pytest.mark.parametrize(
     'scan_args', [(None, str(uuid4()), ArtifactType.FILE, b'content', {}, 'home'),
                   (None, str(uuid4()), ArtifactType.URL, b'content', {}, 'home')]
 )
-def test_scanalytics(statsd, engine_info, is_async, scan_error, scan_value, verbose_metrics, scan_args):
+def test_scanalytics(statsd, engine_info, is_async, scan_error, json_metadata, scan_value, verbose_metrics, scan_args):
     bit, verdict, family = scan_value
 
     if is_async:
@@ -53,7 +54,8 @@ def test_scanalytics(statsd, engine_info, is_async, scan_error, scan_value, verb
             if scan_error is not None:
                 raise scan_error
             else:
-                return ScanResult(bit=bit, verdict=verdict, metadata=Verdict().set_malware_family(family))
+                v = Verdict().set_malware_family(family)
+                return ScanResult(bit=bit, verdict=verdict, metadata=v.json() if json_metadata else v)
 
         result = asyncio.run(scanfn(*scan_args))
     else:
@@ -63,7 +65,8 @@ def test_scanalytics(statsd, engine_info, is_async, scan_error, scan_value, verb
             if scan_error is not None:
                 raise scan_error
             else:
-                return ScanResult(bit=bit, verdict=verdict, metadata=Verdict().set_malware_family(family))
+                v = Verdict().set_malware_family(family)
+                return ScanResult(bit=bit, verdict=verdict, metadata=v.json() if json_metadata else v)
 
         result = scanfn(*scan_args)
 

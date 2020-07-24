@@ -2,6 +2,7 @@ import asyncio
 from contextlib import suppress
 import functools
 import json
+import logging
 import os
 import re
 from time import perf_counter
@@ -23,6 +24,8 @@ from .constants import (
     SCAN_VERDICT,
 )
 from .errors import BaseScanError, CalledProcessScanError
+
+logger = logging.getLogger(__name__)
 
 
 async def create_scanner_exec(
@@ -138,6 +141,7 @@ def scanalytics(
                 try:
                     scan = await scan_fn(self, guid, artifact_type, content, metadata, chain)
                 except BaseScanError as e:
+                    logger.exception('Scan Error: ')
                     scan = scan_error_result(e)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
                 collect_metrics(scan, tags)
@@ -151,6 +155,7 @@ def scanalytics(
                 try:
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
                 except BaseScanError as e:
+                    logger.exception('Scan Error: ')
                     scan = scan_error_result(e)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
                 collect_metrics(scan, tags)

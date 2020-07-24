@@ -7,7 +7,7 @@ with open('README.md', 'r') as readme:
 
 setup(
     name='microengine-utils',
-    version='1.2.2',
+    version='1.3.0.dev0',
     description='Library for Polyswarm Microengine Utility Package',
     long_description=long_description,
     long_description_content_type='text/markdown',

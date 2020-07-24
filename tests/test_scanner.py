@@ -50,9 +50,7 @@ def scan_metadata(request):
     return v.json() if as_json else v
 
 
-@pytest.fixture(
-    scope='function', params=[UnprocessableScanError(), *itertools.product((True, False), repeat=2)]
-)
+@pytest.fixture(scope='function', params=[UnprocessableScanError(), (True, True), (True, False), (False, False)])
 def scan_result(request, scan_metadata):
     if isinstance(request.param, Exception):
         return request.param
@@ -60,18 +58,13 @@ def scan_result(request, scan_metadata):
     return ScanResult(bit=bit, verdict=verdict, metadata=scan_metadata)
 
 
-@pytest.mark.parametrize('use_async', [False] if version_info < (3, 7) else [True, False])
-@pytest.mark.parametrize('verbose_metrics', [True, False])
-@pytest.mark.parametrize(
-    'scan_args', [
-        (None, str(uuid4()), ArtifactType.FILE, b'content', {}, 'home'),
-        (None, str(uuid4()), ArtifactType.URL, b'content', {}, 'home'),
-    ]
-)
-def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metrics, scan_args):
-    tags = ['type:%s' % ArtifactType.to_string(scan_args[2])]
+@pytest.mark.parametrize('verbose_metrics', [True, False], ids=['verbose', 'quiet'])
+@pytest.mark.parametrize('artifact_kind', [ArtifactType.FILE, ArtifactType.URL])
+@pytest.mark.parametrize('use_async', [False] if version_info < (3, 7) else [False, True], ids=lambda p: 'async' if p else 'sync')
+def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metrics, artifact_kind):
     is_error = isinstance(scan_result, Exception)
-
+    args = (None, str(uuid4()), artifact_kind, b'content', {}, 'home')
+    tags = ['type:%s' % ArtifactType.to_string(artifact_kind)]
     if use_async:
 
         @scanalytics(statsd=statsd, engine_info=engine_info, verbose=verbose_metrics)
@@ -80,7 +73,7 @@ def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metric
                 raise scan_result
             return scan_result
 
-        result = asyncio.run(scanfn(*scan_args))
+        result = asyncio.run(scanfn(*args))
     else:
 
         @scanalytics(statsd=statsd, engine_info=engine_info, verbose=verbose_metrics)
@@ -89,7 +82,7 @@ def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metric
                 raise scan_result
             return scan_result
 
-        result = scanfn(*scan_args)
+        result = scanfn(*args)
 
     statsd.timing.assert_called_once()
 

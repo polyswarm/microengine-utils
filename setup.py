@@ -7,7 +7,7 @@ with open('README.md', 'r') as readme:
 
 setup(
     name='microengine-utils',
-    version='1.2.2',
+    version='1.3.0.dev0',
     description='Library for Polyswarm Microengine Utility Package',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -18,6 +18,9 @@ setup(
     python_requires='>=3.6,<4',
     install_requires=[
         'datadog~=0.36.0',
+        'polyswarm-artifact',
+        'polyswarm-client',
+        'pydantic~=1.5.1',
         'requests>=2.20.0',
     ],
     tests_require=[

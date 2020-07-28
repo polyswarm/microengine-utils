@@ -5,6 +5,7 @@ import json
 import os
 import re
 from time import perf_counter
+from traceback import TracebackException
 from typing import Callable, List, Mapping, Optional, Sequence, cast
 
 import datadog
@@ -98,7 +99,21 @@ def scanalytics(
                 metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
             )
 
-        def collect_metrics(scan: 'ScanResult', tags: 'List[str]'):
+        def collect_metrics(scan: 'ScanResult', tags: 'List[str]', exc: 'Optional[Exception]' = None):
+            if isinstance(exc, BaseScanError):
+                tags.append(f'scan_error:{exc.event_name}')
+                statsd.increment(SCAN_FAIL, tags=tags)
+
+                if not isinstance(exc, FileSkippedScanError):
+                    tbexc = TracebackException.from_exception(exc)
+                    statsd.event(
+                        title=f'Scan Error:{tbexc.exc_type.__name__}',
+                        text=''.join(tbexc.format_exception_only()),
+                        aggregation_key=exc.event_name,
+                        alert_type='error',
+                        tags=tags
+                    )
+
             if scan.bit is True:  # successful scan, verdict reported
                 with suppress(AttributeError):
                     family = extract_verdict(scan).malware_family
@@ -115,18 +130,8 @@ def scanalytics(
                 statsd.increment(SCAN_SUCCESS, tags=tags)
 
             elif scan.bit is False:  # no result reported
-                try:
-                    # If scan returns a ScanResult w/ bit=False & Verdict equipped with
-                    # `scan_error`, we'll treat it as an error, regardless of if a BaseScanError
-                    # was raised in scan's function body.
-                    statsd.increment(
-                        SCAN_FAIL,
-                        tags=[*tags, 'scan_error:{scan_error}'.format_map(extract_verdict(scan).__dict__)],
-                    )
-                except (AttributeError, KeyError):
-                    # otherwise, the engine is just reporting no result
-                    statsd.increment(SCAN_NO_RESULT, tags=tags)
-
+                # otherwise, the engine is just reporting no result
+                statsd.increment(SCAN_NO_RESULT, tags=tags)
             else:  # invalid bit
                 statsd.increment(SCAN_TYPE_INVALID, tags=tags)
 
@@ -135,12 +140,13 @@ def scanalytics(
             async def driver(self, guid, artifact_type, content, metadata, chain):
                 tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
                 start = perf_counter()
+                exc = None
                 try:
                     scan = await scan_fn(self, guid, artifact_type, content, metadata, chain)
-                except BaseScanError as e:
-                    scan = scan_error_result(e)
+                except BaseScanError as exc:
+                    scan = scan_error_result(exc)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
-                collect_metrics(scan, tags)
+                collect_metrics(scan, tags, exc)
                 return jsonify_metadata(attach_siginfo(scan))
 
         else:
@@ -148,12 +154,13 @@ def scanalytics(
             def driver(self, guid, artifact_type, content, metadata, chain):
                 tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
                 start = perf_counter()
+                exc = None
                 try:
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
-                except BaseScanError as e:
-                    scan = scan_error_result(e)
+                except BaseScanError as exc:
+                    scan = scan_error_result(exc)
                 statsd.timing(SCAN_TIME, perf_counter() - start)
-                collect_metrics(scan, tags)
+                collect_metrics(scan, tags, exception=exc)
                 return jsonify_metadata(attach_siginfo(scan))
 
         functools.wraps(scan_fn)

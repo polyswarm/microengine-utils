@@ -5,13 +5,16 @@ import json
 import os
 import re
 from time import perf_counter
-from typing import Callable, List, Mapping, Optional, Sequence, Tuple, cast
+from typing import Callable, List, Mapping, Optional, Sequence, Tuple, cast, TYPE_CHECKING
 
 import datadog
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
 from polyswarmclient.abstractscanner import ScanResult
+
+if TYPE_CHECKING:
+    from polyswarmclient.abstractscanner import AbstractScanner
 
 from .config import EngineInfo
 from .constants import (
@@ -48,11 +51,11 @@ async def create_scanner_exec(
         streams = await proc.communicate()
         if check and proc.returncode != 0:
             raise CalledProcessScanError(cmd, f'Non-zero return code: {proc.returncode}')
-        if dos2unix:
-            # replace all CRLF with LF, as expected
-            streams = cast('Tuple[bytes, bytes]', tuple(map(lambda s: s.replace(b'\r\n', b'\n'), streams)))
         sout, serr = map(lambda s: s.decode(errors='ignore'), streams)
-        return (proc.returncode, sout, serr)
+        if dos2unix:
+            # replace all CRLF with LF
+            sout, serr = map(lambda s: s.replace('\r\n', '\n'), (sout, serr))
+        return proc.returncode, sout, serr
     except (FileNotFoundError, BrokenPipeError, ConnectionResetError) as e:  # noqa
         proc.kill()
         raise CalledProcessScanError(cmd, str(type(e)))

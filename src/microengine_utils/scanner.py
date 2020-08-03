@@ -53,7 +53,8 @@ async def create_scanner_exec(
 def scanalytics(
     statsd: 'datadog.DogStatsd' = datadog.statsd,
     engine_info: 'Optional[EngineInfo]' = None,
-    verbose: 'bool' = bool(os.getenv('MICROENGINE_VERBOSE_METRICS', False))
+        verbose: 'bool' = bool(os.getenv('MICROENGINE_VERBOSE_METRICS', False)),
+        capture_scan_error: 'bool' = bool(os.getenv('CAPTURE_VERBOSE_METRICS', False))
 ):
     """Decorator for `async_scan` to automatically handle errors and boilerplate scanner metadata
 

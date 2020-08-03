@@ -23,21 +23,17 @@ class CalledProcessScanError(BaseScanError):
     """Microengine process has failed"""
 
 
-class FileSkippedScanError(BaseScanError):
-    """Microengine skipped scanning this file"""
-
-
-class IllegalFileTypeScanError(FileSkippedScanError):
+class IllegalFileTypeScanError(BaseScanError):
     """Microengine doesn't scan artifacts of this type"""
 
+class FileSkippedScanError(BaseScanError):
+    """Microengine skipped scanning this file"""
 
 class EncryptedFileScanError(FileSkippedScanError):
     """File cannot be decrypted"""
 
-
 class CorruptFileScanError(FileSkippedScanError):
     """File is corrupted, cannot scan"""
-
 
 class HighCompressionScanError(FileSkippedScanError):
     """File is suspiciously compressed, either because of a huge number of

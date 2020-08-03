@@ -5,13 +5,13 @@ import json
 import os
 import re
 from time import perf_counter
-from typing import Callable, List, Mapping, Optional, Sequence, cast
+from typing import Callable, List, Mapping, Optional, Sequence, Tuple, cast
 
 import datadog
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
-from polyswarmclient.abstractscanner import AbstractScanner, ScanResult
+from polyswarmclient.abstractscanner import ScanResult
 
 from .config import EngineInfo
 from .constants import (
@@ -32,7 +32,7 @@ async def create_scanner_exec(
     stdin=None,
     check: bool = False,
     dos2unix: bool = True
-):
+) -> 'Tuple[int, str, str]':
     """Run an engine filescan `cmd`, timing out after `timeout` seconds
 
     You can use `None` in place of `asyncio.subprocess.DEVNULL` for any stream.
@@ -42,15 +42,17 @@ async def create_scanner_exec(
     """
     as_stream = lambda s: asyncio.subprocess.DEVNULL if s is None else s
     try:
-        proc = await asyncio.subprocess.create_subprocess_exec(*cmd, stdout=as_stream(stdout), stderr=as_stream(stderr), stdin=as_stream(stdin))
+        proc = await asyncio.subprocess.create_subprocess_exec(
+            *cmd, stdout=as_stream(stdout), stderr=as_stream(stderr), stdin=as_stream(stdin)
+        )
         streams = await proc.communicate()
         if check and proc.returncode != 0:
             raise CalledProcessScanError(cmd, f'Non-zero return code: {proc.returncode}')
-        streams = map(lambda s: s.decode(errors='ignore'), streams)
         if dos2unix:
             # replace all CRLF with LF, as expected
-            streams = map(lambda s: s.replace('\r\n'), streams)
-        return proc.returncode, *streams
+            streams = cast('Tuple[bytes, bytes]', tuple(map(lambda s: s.replace(b'\r\n', b'\n'), streams)))
+        sout, serr = map(lambda s: s.decode(errors='ignore'), streams)
+        return (proc.returncode, sout, serr)
     except (FileNotFoundError, BrokenPipeError, ConnectionResetError) as e:  # noqa
         proc.kill()
         raise CalledProcessScanError(cmd, str(type(e)))

@@ -20,8 +20,8 @@ setup(
         'datadog~=0.36.0',
         'polyswarm-artifact',
         'polyswarm-client',
-        'pydantic~=1.5.1',
-        'requests>=2.20.0',
+        'pydantic~=1.6.1',
+        'requests~=2.22.0',
     ],
     tests_require=[
         'pytest~=5.4.2',

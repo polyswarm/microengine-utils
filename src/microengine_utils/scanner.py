@@ -97,62 +97,60 @@ def scanalytics(
                 metadata=Verdict().set_malware_family('').add_extra('scan_error', e.event_name)
             )
 
-        def collect_metrics(scan: 'ScanResult', tags: 'List[str]'):
-            if scan.bit is True:  # successful scan, verdict reported
-                with suppress(AttributeError):
-                    family = extract_verdict(scan).malware_family
-                    if isinstance(family, str) and len(family) > 0:
-                        tags.append(f'malware_family:{family}')
+        def collect_metrics(scan: 'ScanResult', start: 'float', artifact_type: 'ArtifactType'):
+            """Collect application metrics from this scan"""
+            # Collect timing information
+            statsd.timing(SCAN_TIME, perf_counter() - start)
+
+            type_tag = 'type:%s' % ArtifactType.to_string(artifact_type)
+
+            if scan.bit is True:
+                if scan.verdict is True:
+                    verdict_tag = 'verdict:malicious'
+                elif scan.verdict is False:
+                    verdict_tag = 'verdict:benign'
+                elif scan.verdict is None:
+                    verdict_tag = 'verdict:none'
+                else:
+                    verdict_tag = 'verdict:unknown.%s' % str(type(scan.verdict))
 
                 if verbose:
-                    # malicious/benign metrics
-                    statsd.increment(
-                        SCAN_VERDICT,
-                        tags=[*tags, 'verdict:malicious' if scan.verdict else 'verdict:benign'],
-                    )
+                    statsd.increment(SCAN_VERDICT, tags=[type_tag, verdict_tag])
 
-                statsd.increment(SCAN_SUCCESS, tags=tags)
+                statsd.increment(SCAN_SUCCESS, tags=[type_tag, verdict_tag])
 
-            elif scan.bit is False:  # no result reported
+            elif scan.bit is False:
                 try:
-                    # If scan returns a ScanResult w/ bit=False & Verdict equipped with
-                    # `scan_error`, we'll treat it as an error, regardless of if a BaseScanError
-                    # was raised in scan's function body.
-                    statsd.increment(
-                        SCAN_FAIL,
-                        tags=[*tags, 'scan_error:{scan_error}'.format_map(extract_verdict(scan).__dict__)],
-                    )
+                    # Treat any scan result w/ bit=False & 'scan_error' in metadata as an error
+                    statsd.increment(SCAN_FAIL, tags=[
+                        type_tag,
+                        'scan_error:%s' % extract_verdict(scan).__dict__['scan_error']
+                    ])
                 except (AttributeError, KeyError):
                     # otherwise, the engine is just reporting no result
-                    statsd.increment(SCAN_NO_RESULT, tags=tags)
+                    statsd.increment(SCAN_NO_RESULT, tags=[type_tag])
 
-            else:  # invalid bit
-                statsd.increment(SCAN_TYPE_INVALID, tags=tags)
+            else:
+                statsd.increment(SCAN_TYPE_INVALID, tags=[type_tag])
 
         if asyncio.iscoroutinefunction(scan_fn):
-
             async def driver(self, guid, artifact_type, content, metadata, chain):
-                tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
-                start = perf_counter()
+                start: float = perf_counter()
                 try:
                     scan = await scan_fn(self, guid, artifact_type, content, metadata, chain)
                 except BaseScanError as e:
                     scan = scan_error_result(e)
-                statsd.timing(SCAN_TIME, perf_counter() - start)
-                collect_metrics(scan, tags)
+                collect_metrics(scan, start, artifact_type)
                 return jsonify_metadata(attach_siginfo(scan))
 
         else:
-
             def driver(self, guid, artifact_type, content, metadata, chain):
-                tags = [f'type:{ ArtifactType.to_string(artifact_type) }']  # e.g 'type:file' or 'type:url'
-                start = perf_counter()
+                start: float = perf_counter()
                 try:
                     scan = scan_fn(self, guid, artifact_type, content, metadata, chain)
                 except BaseScanError as e:
                     scan = scan_error_result(e)
-                statsd.timing(SCAN_TIME, perf_counter() - start)
-                collect_metrics(scan, tags)
+                collect_metrics(scan, start, artifact_type)
                 return jsonify_metadata(attach_siginfo(scan))
 
         functools.wraps(scan_fn)
@@ -163,13 +161,11 @@ def scanalytics(
 
 def each_match(string: 'str', patterns: 'Sequence[str]', in_order=False):
     """
-    Return an iterator yielding (GROUP NAME, MATCH STRING) tuples of all non-overlapping matches
-    for the regex patterns (``patterns``) found in ``string``
+    Return an iterator yielding (GROUP NAME, MATCH STRING) for each non-overlapping pattern
+    (``patterns``) found in ``string``
 
-    If `in_order` is true, each of the patterns only match if they occur *after* any (matched)
-    patterns prior in the ``patterns`` list (however, these earlier patterns aren't required
-    to have matched for subsequent patterns to matcharen't actually
-    required for subsequent patterns to match)
+    If `in_order` is ``True``, each of the patterns only match if they occur *after* a previously
+    matched pattern (earlier patterns are yielded regardless of if a later pattern matches)
     """
     pat = re.compile('|'.join(patterns), re.MULTILINE)
     idx = -1

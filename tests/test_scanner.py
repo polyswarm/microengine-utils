@@ -64,7 +64,7 @@ def scan_result(request, scan_metadata):
 def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metrics, artifact_kind):
     is_error = isinstance(scan_result, Exception)
     args = (None, str(uuid4()), artifact_kind, b'content', {}, 'home')
-    tags = ['type:%s' % ArtifactType.to_string(artifact_kind)]
+    type_tag = 'type:%s' % ArtifactType.to_string(artifact_kind)
     if use_async:
 
         @scanalytics(statsd=statsd, engine_info=engine_info, verbose=verbose_metrics)
@@ -95,22 +95,20 @@ def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metric
         assert result_meta.__dict__['scan_error'] == scan_result.event_name
         assert result.bit is False
         statsd.increment.assert_called_once_with(
-            SCAN_FAIL, tags=[*tags, f'scan_error:{scan_result.event_name}']
+            SCAN_FAIL, tags=[type_tag, f'scan_error:{scan_result.event_name}']
         )
     else:
         assert result.verdict is scan_result.verdict
         assert result.bit is scan_result.bit
+        verdict_tag = 'verdict:malicious' if scan_result.verdict else 'verdict:benign'
 
         if scan_result.bit is True:
-            if result_meta.malware_family:
-                tags.append(f'malware_family:{result_meta.malware_family}')
-
-            statsd.increment.assert_any_call(SCAN_SUCCESS, tags=tags)
+            statsd.increment.assert_any_call(SCAN_SUCCESS, tags=[type_tag, verdict_tag])
 
             if verbose_metrics:
                 statsd.increment.assert_any_call(
                     SCAN_VERDICT,
-                    tags=tags + ['verdict:malicious' if scan_result.verdict else 'verdict:benign'],
+                    tags=[type_tag, verdict_tag],
                 )
                 assert statsd.increment.call_count == 2
             else:
@@ -118,7 +116,7 @@ def test_scanalytics(statsd, engine_info, use_async, scan_result, verbose_metric
 
         elif scan_result.bit is False:
             if verbose_metrics:
-                statsd.increment.assert_called_once_with(SCAN_NO_RESULT, tags=tags)
+                statsd.increment.assert_called_once_with(SCAN_NO_RESULT, tags=[type_tag])
 
 
 @pytest.mark.parametrize(

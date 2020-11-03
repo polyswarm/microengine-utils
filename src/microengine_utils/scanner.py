@@ -74,12 +74,10 @@ def scanalytics(
         def attach_siginfo(scan: 'ScanResult') -> 'ScanResult':
             """Attach shared engine metadata to ``scan`` metadata"""
             with suppress(AttributeError):
-                # If there's valid engine info, *always* attach a Verdict, even
-                # if ``scan.metadata`` is None
-                sinfo = engine_info.scanner_info()
-                if sinfo:
+                scanner_info = engine_info.scanner_info()
+                if scanner_info:
                     meta = extract_verdict(scan) or Verdict().set_malware_family('')
-                    scan.metadata = meta.set_scanner(**sinfo)
+                    scan.metadata = meta.set_scanner(**scanner_info)
             return scan
 
         def jsonify_metadata(scan: 'ScanResult') -> 'ScanResult':

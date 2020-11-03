@@ -5,13 +5,16 @@ import json
 import os
 import re
 from time import perf_counter
-from typing import Callable, List, Mapping, Optional, Sequence, cast
+from typing import Callable, List, Mapping, Optional, Sequence, Tuple, cast, TYPE_CHECKING
 
 import datadog
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
-from polyswarmclient.abstractscanner import AbstractScanner, ScanResult
+from polyswarmclient.abstractscanner import ScanResult
+
+if TYPE_CHECKING:
+    from polyswarmclient.abstractscanner import AbstractScanner
 
 from .config import EngineInfo
 from .constants import (
@@ -26,24 +29,32 @@ from .errors import BaseScanError, CalledProcessScanError
 
 
 async def create_scanner_exec(
-    *cmd: 'str',
+    *cmd: str,
     stdout=asyncio.subprocess.PIPE,
     stderr=asyncio.subprocess.PIPE,
-    stdin=asyncio.subprocess.DEVNULL,
-    check: 'bool' = False,
-):
-    """Run an engine filescan `cmd`, timing out after `timeout` seconds"""
+    stdin=None,
+    check: bool = False,
+    dos2unix: bool = True
+) -> 'Tuple[int, str, str]':
+    """Run an engine filescan `cmd`, timing out after `timeout` seconds
+
+    You can use `None` in place of `asyncio.subprocess.DEVNULL` for any stream.
+
+    ``check`` controls if an error should be thrown if the return code is non-zero
+    ``dos2unix`` controls if the output shoudl have CRLF converted to LF
+    """
+    as_stream = lambda s: asyncio.subprocess.DEVNULL if s is None else s
     try:
         proc = await asyncio.subprocess.create_subprocess_exec(
-            *cmd,
-            stdout=stdout,
-            stderr=stderr,
-            stdin=stdin,
+            *cmd, stdout=as_stream(stdout), stderr=as_stream(stderr), stdin=as_stream(stdin)
         )
         streams = await proc.communicate()
         if check and proc.returncode != 0:
             raise CalledProcessScanError(cmd, f'Non-zero return code: {proc.returncode}')
-        sout, serr = (s.decode(errors='ignore') for s in streams)
+        sout, serr = map(lambda s: s.decode(errors='ignore'), streams)
+        if dos2unix:
+            # replace all CRLF with LF
+            sout, serr = map(lambda s: s.replace('\r\n', '\n'), (sout, serr))
         return proc.returncode, sout, serr
     except (FileNotFoundError, BrokenPipeError, ConnectionResetError) as e:  # noqa
         proc.kill()

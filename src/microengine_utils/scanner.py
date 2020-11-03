@@ -111,7 +111,7 @@ def scanalytics(
                 elif scan.verdict is None:
                     verdict_tag = 'verdict:none'
                 else:
-                    verdict_tag = 'verdict:unknown.%s' % str(type(scan.verdict))
+                    verdict_tag = 'verdict:invalid.%s' % type(scan.verdict).__name__
 
                 if verbose:
                     statsd.increment(SCAN_VERDICT, tags=[type_tag, verdict_tag])

@@ -20,7 +20,7 @@ default:
 
 dev-pypi:
   tags:
-    - kube
+    - kube-small-new
   stage: build
   before_script:
     - pip3 install -q --upgrade pip setuptools twine wheel bump2version
@@ -35,7 +35,7 @@ dev-pypi:
 
 test-run36:
   tags:
-    - kube
+    - kube-small-new
   image: python:3.6
   stage: test
   before_script:
@@ -47,7 +47,7 @@ test-run36:
 
 test-run37:
   tags:
-    - kube
+    - kube-small-new
   image: python:3.7
   stage: test
   before_script:
@@ -59,7 +59,7 @@ test-run37:
 
 test-run38:
   tags:
-    - kube
+    - kube-small-new
   image: python:3.8
   stage: test
   before_script:
@@ -75,7 +75,7 @@ test-run38:
 
 release-pypi:
   tags:
-    - kube
+    - kube-small-new
   stage: release
   script:
     # release to internal pypi but do not tag yet

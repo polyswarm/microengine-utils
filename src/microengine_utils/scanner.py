@@ -1,17 +1,18 @@
 import asyncio
-from contextlib import suppress
+import datadog
 import functools
 import json
 import os
 import re
+
+from contextlib import suppress
 from time import perf_counter
 from typing import Callable, List, Mapping, Optional, Sequence, cast
+from pydantic import BaseModel, Field
 
-import datadog
 
 from polyswarmartifact import ArtifactType
 from polyswarmartifact.schema.verdict import Verdict
-from polyswarmclient.abstractscanner import AbstractScanner, ScanResult
 
 from .config import EngineInfo
 from .constants import (
@@ -23,6 +24,13 @@ from .constants import (
     SCAN_VERDICT,
 )
 from .errors import BaseScanError, CalledProcessScanError
+
+
+class ScanResult(BaseModel):
+    bit: bool
+    verdict: bool
+    confidence: float = 1.0
+    metadata: Verdict = Field(default_factory =lambda: Verdict().set_malware_family('').json())
 
 
 async def create_scanner_exec(

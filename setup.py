@@ -19,12 +19,12 @@ setup(
     install_requires=[
         'datadog~=0.36.0',
         'polyswarm-artifact~=1.4.2',
-        'polyswarm-client',
         'pydantic~=1.6.1',
         'requests~=2.22.0',
     ],
     tests_require=[
         'pytest~=5.4.2',
+        'polyswarm-client',
     ],
     include_package_data=True,
     packages=find_packages('src'),

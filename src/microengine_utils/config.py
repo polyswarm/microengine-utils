@@ -3,9 +3,6 @@ from typing import Mapping, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from polyswarmartifact.schema.verdict import Verdict
-from polyswarmclient.abstractscanner import ScanResult
-
 from .constants import ENGINE_NAME, PLATFORM_MACHINE, PLATFORM_OS
 
 

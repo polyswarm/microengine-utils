@@ -30,7 +30,7 @@ class ScanResult(BaseModel):
     bit: bool
     verdict: bool
     confidence: float = 1.0
-    metadata: Verdict = Field(default_factory =lambda: Verdict().set_malware_family('').json())
+    metadata: Verdict = Field(default_factory=lambda: Verdict().set_malware_family('').json())
 
 
 async def create_scanner_exec(

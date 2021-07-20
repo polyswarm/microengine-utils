@@ -27,6 +27,7 @@ from .errors import BaseScanError, CalledProcessScanError
 
 
 class ScanResult(BaseModel):
+    """Mimics polyswarmclient.abstractscanner::ScanResult for duck-typing"""
     bit: bool
     verdict: bool
     confidence: float = 1.0

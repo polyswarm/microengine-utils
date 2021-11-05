@@ -52,7 +52,7 @@ async def create_scanner_exec(
         streams = await proc.communicate()
         if check and proc.returncode != 0:
             raise CalledProcessScanError(cmd, f'Non-zero return code: {proc.returncode}')
-        sout, serr = (s.decode(errors='ignore') for s in streams)
+        sout, serr = (s.decode(errors='ignore') if s else None for s in streams)
         return proc.returncode, sout, serr
     except (FileNotFoundError, BrokenPipeError, ConnectionResetError) as e:  # noqa
         proc.kill()
